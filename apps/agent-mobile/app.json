@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "Mansa Agent",
+    "slug": "mansa-agent",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "scheme": "mansa-agent",
+    "ios": { "supportsTablet": false, "bundleIdentifier": "com.mansa.agent" },
+    "android": { "package": "com.mansa.agent", "adaptiveIcon": { "backgroundColor": "#071B16" } }
+  }
+}

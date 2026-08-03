@@ -1,8 +1,8 @@
 {
-  "name": "@mansa/client-mobile",
+  "name": "@mansa/agent-mobile",
   "version": "0.0.0",
   "private": true,
-  "description": "Application Client mobile Mansa",
+  "description": "Application mobile Mansa Agent",
   "license": "UNLICENSED",
   "main": "index.ts",
   "scripts": {
