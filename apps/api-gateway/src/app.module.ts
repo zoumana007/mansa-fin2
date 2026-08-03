@@ -7,6 +7,7 @@ import { validateEnvironment } from "./config/environment.js";
 import { PrismaService } from "./database/prisma.service.js";
 import { HealthController } from "./health/health.controller.js";
 import { IdentityModule } from "./identity/identity.module.js";
+import { LedgerModule } from "./ledger/ledger.module.js";
 import { RbacModule } from "./rbac/rbac.module.js";
 import { AccessTokenGuard } from "./security/access-token.guard.js";
 import { PermissionsGuard } from "./security/permissions.guard.js";
@@ -16,6 +17,7 @@ import { PermissionsGuard } from "./security/permissions.guard.js";
     ConfigModule.forRoot({ isGlobal: true, cache: true, validate: validateEnvironment }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
     IdentityModule,
+    LedgerModule,
     RbacModule,
   ],
   controllers: [HealthController],

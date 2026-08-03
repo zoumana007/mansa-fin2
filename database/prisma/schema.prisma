@@ -46,6 +46,60 @@ enum AccessScopeType {
   RESOURCE
 }
 
+enum LedgerAccountOwnerType {
+  USER
+  MERCHANT
+  MANSA
+  PARTNER
+  TECHNICAL
+}
+
+enum LedgerAccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+  SUSPENSE
+  SETTLEMENT
+  FEE
+  TAX
+  RESERVE
+}
+
+enum LedgerNormalBalance {
+  DEBIT
+  CREDIT
+}
+
+enum LedgerAccountStatus {
+  ACTIVE
+  RESTRICTED
+  CLOSED
+}
+
+enum LedgerTransactionStatus {
+  DRAFT
+  PREPARED
+  POSTED
+  FAILED
+  CANCELLED
+  REVERSED
+  EXPIRED
+}
+
+enum LedgerEntryDirection {
+  DEBIT
+  CREDIT
+}
+
+enum LedgerEntryStatus {
+  PENDING
+  POSTED
+  REVERSED
+  FAILED
+}
+
 /// Registre technique des versions applicatives du schéma Mansa.
 /// Il complète l'historique interne de Prisma sans contenir de donnée métier.
 model DatabaseSchemaVersion {
@@ -75,6 +129,8 @@ model User {
   sessions            UserSession[]
   roleAssignments     RoleAssignment[]
   accessAuditEntries  AccessAudit[]          @relation("AccessAuditActor")
+  ledgerTransactions  LedgerTransaction[]    @relation("LedgerTransactionCreator")
+  ledgerAuditEntries  LedgerAudit[]          @relation("LedgerAuditActor")
 
   @@index([status])
   @@map("users")
@@ -155,6 +211,113 @@ model AccessAudit {
   @@index([actorUserId, createdAt])
   @@index([targetType, targetId])
   @@map("access_audit")
+}
+
+model LedgerJournal {
+  id           String              @id @default(uuid()) @db.Uuid
+  code         String              @unique @db.VarChar(50)
+  name         String              @db.VarChar(150)
+  description  String?             @db.Text
+  active       Boolean             @default(true)
+  createdAt    DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  transactions LedgerTransaction[]
+
+  @@map("ledger_journals")
+}
+
+model LedgerAccount {
+  id              String                 @id @default(uuid()) @db.Uuid
+  publicReference String                 @unique @map("public_reference") @db.VarChar(50)
+  ownerType       LedgerAccountOwnerType @map("owner_type")
+  ownerId         String?                @map("owner_id") @db.VarChar(100)
+  type            LedgerAccountType
+  subtype         String?                @db.VarChar(100)
+  currencyCode    String                 @map("currency_code") @db.Char(3)
+  countryCode     String                 @map("country_code") @db.Char(2)
+  environment     String                 @db.VarChar(30)
+  status          LedgerAccountStatus    @default(ACTIVE)
+  normalBalance   LedgerNormalBalance    @map("normal_balance")
+  restrictions    Json?
+  metadata        Json?
+  version         Int                    @default(1)
+  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  closedAt        DateTime?              @map("closed_at") @db.Timestamptz(6)
+  entries         LedgerEntry[]
+
+  @@index([ownerType, ownerId, status])
+  @@index([currencyCode, countryCode, environment, status])
+  @@map("ledger_accounts")
+}
+
+model LedgerTransaction {
+  id                String                  @id @default(uuid()) @db.Uuid
+  journalId         String                  @map("journal_id") @db.Uuid
+  type              String                  @db.VarChar(100)
+  businessReference String?                 @map("business_reference") @db.VarChar(100)
+  idempotencyKey    String                  @map("idempotency_key") @db.VarChar(150)
+  requestHash       String                  @map("request_hash") @db.Char(64)
+  status            LedgerTransactionStatus @default(DRAFT)
+  currencyCode      String                  @map("currency_code") @db.Char(3)
+  countryCode       String                  @map("country_code") @db.Char(2)
+  environment       String                  @db.VarChar(30)
+  description       String                  @db.VarChar(500)
+  correlationId     String?                 @map("correlation_id") @db.VarChar(100)
+  source            String                  @db.VarChar(100)
+  createdByUserId   String                  @map("created_by_user_id") @db.Uuid
+  effectiveAt       DateTime                @map("effective_at") @db.Timestamptz(6)
+  postedAt          DateTime?               @map("posted_at") @db.Timestamptz(6)
+  parentId          String?                 @map("parent_id") @db.Uuid
+  metadata          Json?
+  createdAt         DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  journal           LedgerJournal           @relation(fields: [journalId], references: [id], onDelete: Restrict)
+  createdBy         User                    @relation("LedgerTransactionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  parent            LedgerTransaction?      @relation("LedgerTransactionParent", fields: [parentId], references: [id], onDelete: Restrict)
+  children          LedgerTransaction[]     @relation("LedgerTransactionParent")
+  entries           LedgerEntry[]
+  auditEntries      LedgerAudit[]
+
+  @@unique([environment, idempotencyKey])
+  @@index([businessReference])
+  @@index([correlationId])
+  @@index([status, createdAt])
+  @@map("ledger_transactions")
+}
+
+model LedgerEntry {
+  id            String               @id @default(uuid()) @db.Uuid
+  transactionId String               @map("transaction_id") @db.Uuid
+  accountId     String               @map("account_id") @db.Uuid
+  direction     LedgerEntryDirection
+  amount        BigInt               @db.BigInt
+  currencyCode  String               @map("currency_code") @db.Char(3)
+  sequence      Int
+  status        LedgerEntryStatus    @default(PENDING)
+  label         String               @db.VarChar(300)
+  reference     String?              @db.VarChar(100)
+  metadata      Json?
+  createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  transaction   LedgerTransaction    @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  account       LedgerAccount        @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@unique([transactionId, sequence])
+  @@index([accountId, status, createdAt])
+  @@map("ledger_entries")
+}
+
+model LedgerAudit {
+  id            String             @id @default(uuid()) @db.Uuid
+  transactionId String?            @map("transaction_id") @db.Uuid
+  actorUserId   String?            @map("actor_user_id") @db.Uuid
+  action        String             @db.VarChar(150)
+  reason        String?            @db.VarChar(500)
+  details       Json?
+  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  transaction   LedgerTransaction? @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  actor         User?              @relation("LedgerAuditActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([transactionId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("ledger_audit")
 }
 
 model AuthenticationMethod {

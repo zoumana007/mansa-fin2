@@ -12,6 +12,7 @@ const migrationFiles = [
   "database/prisma/migrations/20260803000000_initialize_schema/migration.sql",
   "database/prisma/migrations/20260803010000_add_identity_auth/migration.sql",
   "database/prisma/migrations/20260803020000_add_rbac/migration.sql",
+  "database/prisma/migrations/20260803030000_add_ledger_core/migration.sql",
 ].map((path) => new URL(path, repositoryRoot));
 
 const result = spawnSync(
@@ -32,6 +33,7 @@ const migration = (await Promise.all(migrationFiles.map((file) => readFile(file,
 /** @param {string} sql */
 const statements = (sql) =>
   sql
+    .replaceAll(/-- PrismaUnsupportedStart[\s\S]*?-- PrismaUnsupportedEnd/g, "")
     .split("\n")
     .filter((line) => !line.trimStart().startsWith("--"))
     .join("\n")
@@ -39,6 +41,7 @@ const statements = (sql) =>
     .map((statement) => statement.replaceAll(/\s+/g, " ").trim())
     .filter(Boolean)
     .filter((statement) => !statement.startsWith('INSERT INTO "permissions"'))
+    .filter((statement) => !statement.startsWith('INSERT INTO "ledger_journals"'))
     .sort();
 
 assert.deepEqual(
