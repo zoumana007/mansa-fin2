@@ -1,0 +1,29 @@
+{
+  "name": "@mansa/client-mobile",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Application Client mobile Mansa",
+  "license": "UNLICENSED",
+  "main": "index.ts",
+  "scripts": {
+    "build": "expo export --platform android --output-dir dist/android && expo export --platform ios --output-dir dist/ios",
+    "lint": "eslint src test App.tsx index.ts",
+    "start": "expo start",
+    "start:android": "expo start --android",
+    "start:ios": "expo start --ios",
+    "test": "node --import tsx --test test/**/*.spec.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "expo": "57.0.0",
+    "expo-status-bar": "~57.0.0",
+    "react": "19.2.3",
+    "react-native": "0.86.0",
+    "react-native-safe-area-context": "~5.7.0"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.14",
+    "tsx": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "Mansa",
+    "slug": "mansa-client",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "scheme": "mansa",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.mansa.client"
+    },
+    "android": {
+      "package": "com.mansa.client",
+      "adaptiveIcon": {
+        "backgroundColor": "#071B16"
+      }
+    }
+  }
+}
