@@ -130,86 +130,7 @@ export class LedgerService {
 
     try {
       const transaction = await this.prisma.$transaction(
-        async (database) => {
-          const journal = await database.ledgerJournal.findUnique({
-            where: { code: input.journalCode },
-            select: { id: true, active: true },
-          });
-          if (!journal?.active) throw new BadRequestException("Ledger journal is unavailable");
-          const accountIds = [...new Set(input.entries.map(({ accountId }) => accountId))];
-          const accounts = await database.ledgerAccount.findMany({
-            where: {
-              id: { in: accountIds },
-              status: "ACTIVE",
-              currencyCode: input.currencyCode,
-              countryCode: input.countryCode,
-              environment: input.environment,
-            },
-            select: { id: true, wallet: { select: { status: true } } },
-          });
-          if (
-            accounts.length !== accountIds.length ||
-            accounts.some(
-              ({ wallet }) =>
-                wallet !== null && wallet.status !== "ACTIVE" && wallet.status !== "LIMITED",
-            )
-          )
-            throw new BadRequestException(
-              "Every ledger account must be active, usable and match transaction context",
-            );
-
-          const created = await database.ledgerTransaction.create({
-            data: {
-              journalId: journal.id,
-              type: input.type,
-              businessReference: input.businessReference ?? null,
-              idempotencyKey: input.idempotencyKey,
-              requestHash: hash,
-              status: "PREPARED",
-              currencyCode: input.currencyCode,
-              countryCode: input.countryCode,
-              environment: input.environment,
-              description: input.description,
-              correlationId: input.correlationId ?? null,
-              source: input.source,
-              createdByUserId: actorUserId,
-              effectiveAt: new Date(input.effectiveAt),
-              parentId: input.parentId ?? null,
-              ...(input.metadata === undefined
-                ? {}
-                : { metadata: input.metadata as Prisma.InputJsonValue }),
-              entries: {
-                create: input.entries.map((entry, index) => ({
-                  accountId: entry.accountId,
-                  direction: entry.direction,
-                  amount: BigInt(entry.amount),
-                  currencyCode: input.currencyCode,
-                  sequence: index + 1,
-                  label: entry.label,
-                  reference: entry.reference ?? null,
-                })),
-              },
-            },
-            select: { id: true },
-          });
-          await database.ledgerEntry.updateMany({
-            where: { transactionId: created.id },
-            data: { status: "POSTED" },
-          });
-          await database.ledgerTransaction.update({
-            where: { id: created.id },
-            data: { status: "POSTED", postedAt: new Date() },
-          });
-          await database.ledgerAudit.create({
-            data: {
-              transactionId: created.id,
-              actorUserId,
-              action: "ledger.transaction.post",
-              details: { idempotencyKey: input.idempotencyKey, requestHash: hash },
-            },
-          });
-          return this.getTransactionWithClient(database, created.id);
-        },
+        (database) => this.postTransactionWithClient(database, input, actorUserId, hash),
         { isolationLevel: "Serializable" },
       );
       return transaction;
@@ -219,6 +140,92 @@ export class LedgerService {
       if (concurrent === null) throw error;
       return this.resolveIdempotent(concurrent, hash);
     }
+  }
+
+  async postTransactionWithClient(
+    database: Prisma.TransactionClient,
+    input: PostLedgerTransactionDto,
+    actorUserId: string,
+    hash = requestHash(input),
+  ) {
+    assertBalanced(input.entries);
+    const journal = await database.ledgerJournal.findUnique({
+      where: { code: input.journalCode },
+      select: { id: true, active: true },
+    });
+    if (!journal?.active) throw new BadRequestException("Ledger journal is unavailable");
+    const accountIds = [...new Set(input.entries.map(({ accountId }) => accountId))];
+    const accounts = await database.ledgerAccount.findMany({
+      where: {
+        id: { in: accountIds },
+        status: "ACTIVE",
+        currencyCode: input.currencyCode,
+        countryCode: input.countryCode,
+        environment: input.environment,
+      },
+      select: { id: true, wallet: { select: { status: true } } },
+    });
+    if (
+      accounts.length !== accountIds.length ||
+      accounts.some(
+        ({ wallet }) =>
+          wallet !== null && wallet.status !== "ACTIVE" && wallet.status !== "LIMITED",
+      )
+    )
+      throw new BadRequestException(
+        "Every ledger account must be active, usable and match transaction context",
+      );
+    const created = await database.ledgerTransaction.create({
+      data: {
+        journalId: journal.id,
+        type: input.type,
+        businessReference: input.businessReference ?? null,
+        idempotencyKey: input.idempotencyKey,
+        requestHash: hash,
+        status: "PREPARED",
+        currencyCode: input.currencyCode,
+        countryCode: input.countryCode,
+        environment: input.environment,
+        description: input.description,
+        correlationId: input.correlationId ?? null,
+        source: input.source,
+        createdByUserId: actorUserId,
+        effectiveAt: new Date(input.effectiveAt),
+        parentId: input.parentId ?? null,
+        ...(input.metadata === undefined
+          ? {}
+          : { metadata: input.metadata as Prisma.InputJsonValue }),
+        entries: {
+          create: input.entries.map((entry, index) => ({
+            accountId: entry.accountId,
+            direction: entry.direction,
+            amount: BigInt(entry.amount),
+            currencyCode: input.currencyCode,
+            sequence: index + 1,
+            label: entry.label,
+            reference: entry.reference ?? null,
+          })),
+        },
+      },
+      select: { id: true },
+    });
+    await database.ledgerEntry.updateMany({
+      where: { transactionId: created.id },
+      data: { status: "POSTED" },
+    });
+    await database.ledgerTransaction.update({
+      where: { id: created.id },
+      data: { status: "POSTED", postedAt: new Date() },
+    });
+    await database.ledgerAudit.create({
+      data: {
+        transactionId: created.id,
+        actorUserId,
+        action: "ledger.transaction.post",
+        details: { idempotencyKey: input.idempotencyKey, requestHash: hash },
+      },
+    });
+    return this.getTransactionWithClient(database, created.id);
   }
 
   async getTransaction(transactionId: string) {

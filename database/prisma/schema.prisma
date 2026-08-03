@@ -134,6 +134,19 @@ enum WalletVerificationLevel {
   ENHANCED
 }
 
+enum PaymentType {
+  INTERNAL
+}
+
+enum PaymentStatus {
+  INITIATED
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+  REVERSED
+}
+
 /// Registre technique des versions applicatives du schéma Mansa.
 /// Il complète l'historique interne de Prisma sans contenir de donnée métier.
 model DatabaseSchemaVersion {
@@ -167,6 +180,8 @@ model User {
   ledgerAuditEntries  LedgerAudit[]          @relation("LedgerAuditActor")
   wallets             Wallet[]
   walletAuditEntries  WalletAudit[]          @relation("WalletAuditActor")
+  initiatedPayments   Payment[]              @relation("PaymentInitiator")
+  paymentAuditEntries PaymentAudit[]         @relation("PaymentAuditActor")
 
   @@index([status])
   @@map("users")
@@ -312,6 +327,7 @@ model LedgerTransaction {
   children          LedgerTransaction[]     @relation("LedgerTransactionParent")
   entries           LedgerEntry[]
   auditEntries      LedgerAudit[]
+  payment           Payment?
 
   @@unique([environment, idempotencyKey])
   @@index([businessReference])
@@ -380,6 +396,8 @@ model Wallet {
   ownerUser         User?                   @relation(fields: [ownerUserId], references: [id], onDelete: Restrict)
   ledgerAccount     LedgerAccount           @relation(fields: [ledgerAccountId], references: [id], onDelete: Restrict)
   auditEntries      WalletAudit[]
+  outgoingPayments  Payment[]               @relation("PaymentPayerWallet")
+  incomingPayments  Payment[]               @relation("PaymentPayeeWallet")
 
   @@unique([ownerType, ownerId, type, currencyCode, environment])
   @@index([ownerUserId, status])
@@ -402,6 +420,55 @@ model WalletAudit {
   @@index([walletId, createdAt])
   @@index([actorUserId, createdAt])
   @@map("wallet_audit")
+}
+
+model Payment {
+  id                  String             @id @default(uuid()) @db.Uuid
+  publicReference     String             @unique @map("public_reference") @db.VarChar(50)
+  type                PaymentType        @default(INTERNAL)
+  status              PaymentStatus      @default(INITIATED)
+  payerWalletId       String             @map("payer_wallet_id") @db.Uuid
+  payeeWalletId       String             @map("payee_wallet_id") @db.Uuid
+  amount              BigInt             @db.BigInt
+  feeAmount           BigInt             @default(0) @map("fee_amount") @db.BigInt
+  currencyCode        String             @map("currency_code") @db.Char(3)
+  countryCode         String             @map("country_code") @db.Char(2)
+  environment         String             @db.VarChar(30)
+  idempotencyKey      String             @map("idempotency_key") @db.VarChar(150)
+  requestHash         String             @map("request_hash") @db.Char(64)
+  description         String             @db.VarChar(500)
+  initiatedByUserId   String             @map("initiated_by_user_id") @db.Uuid
+  ledgerTransactionId String?            @unique @map("ledger_transaction_id") @db.Uuid
+  completedAt         DateTime?          @map("completed_at") @db.Timestamptz(6)
+  failureCode         String?            @map("failure_code") @db.VarChar(100)
+  createdAt           DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  payerWallet         Wallet             @relation("PaymentPayerWallet", fields: [payerWalletId], references: [id], onDelete: Restrict)
+  payeeWallet         Wallet             @relation("PaymentPayeeWallet", fields: [payeeWalletId], references: [id], onDelete: Restrict)
+  initiatedBy         User               @relation("PaymentInitiator", fields: [initiatedByUserId], references: [id], onDelete: Restrict)
+  ledgerTransaction   LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id], onDelete: Restrict)
+  auditEntries        PaymentAudit[]
+
+  @@unique([environment, idempotencyKey])
+  @@index([payerWalletId, createdAt])
+  @@index([payeeWalletId, createdAt])
+  @@index([status, createdAt])
+  @@map("payments")
+}
+
+model PaymentAudit {
+  id          String   @id @default(uuid()) @db.Uuid
+  paymentId   String   @map("payment_id") @db.Uuid
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  action      String   @db.VarChar(150)
+  details     Json?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  payment     Payment  @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  actor       User?    @relation("PaymentAuditActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([paymentId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("payment_audit")
 }
 
 model AuthenticationMethod {
