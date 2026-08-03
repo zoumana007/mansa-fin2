@@ -1,0 +1,19 @@
+packages:
+  - "apps/*"
+  - "services/*"
+  - "packages/*"
+  - "tools/*"
+
+catalog:
+  "@eslint/js": 10.0.1
+  "@types/node": 24.10.4
+  eslint: 10.8.0
+  globals: 17.8.0
+  prettier: 3.9.6
+  turbo: 2.10.8
+  typescript: 6.0.3
+  typescript-eslint: 8.65.0
+
+catalogMode: strict
+
+onlyBuiltDependencies: []

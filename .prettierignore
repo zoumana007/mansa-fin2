@@ -1,0 +1,12 @@
+.git
+.turbo
+node_modules
+dist
+build
+coverage
+
+# The official documentation is immutable during P0-02.
+docs
+01-cartographie
+03-architecture-technique
+README.md

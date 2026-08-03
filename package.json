@@ -1,0 +1,32 @@
+{
+  "name": "mansa-fin",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Socle technique du monorepo Mansa",
+  "license": "UNLICENSED",
+  "type": "module",
+  "packageManager": "pnpm@11.18.0",
+  "engines": {
+    "node": ">=24.0.0 <25",
+    "pnpm": ">=11.0.0 <12"
+  },
+  "scripts": {
+    "build": "pnpm typecheck",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "test": "node --test tests/repository-structure.test.mjs",
+    "typecheck": "tsc --project tsconfig.tools.json --noEmit"
+  },
+  "devDependencies": {
+    "@eslint/js": "catalog:",
+    "@types/node": "catalog:",
+    "eslint": "catalog:",
+    "globals": "catalog:",
+    "prettier": "catalog:",
+    "turbo": "catalog:",
+    "typescript": "catalog:",
+    "typescript-eslint": "catalog:"
+  }
+}

@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Build and task caches
+.turbo/
+dist/
+build/
+coverage/
+
+# Environment files (examples remain trackable)
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Logs
+*.log
+pnpm-debug.log*
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+
+# Local tooling
+*.tsbuildinfo
