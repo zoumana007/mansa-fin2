@@ -5,7 +5,15 @@ import tseslint from "typescript-eslint";
 
 export default defineConfig(
   {
-    ignores: ["**/.turbo/**", "**/build/**", "**/coverage/**", "**/dist/**", "**/node_modules/**"],
+    ignores: [
+      "**/.pnpm-store/**",
+      "**/.turbo/**",
+      "**/build/**",
+      "**/coverage/**",
+      "**/dist/**",
+      "**/generated/**",
+      "**/node_modules/**",
+    ],
   },
   eslint.configs.recommended,
   tseslint.configs.strictTypeChecked,

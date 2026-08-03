@@ -11,22 +11,34 @@
     "pnpm": ">=11.0.0 <12"
   },
   "scripts": {
-    "build": "pnpm typecheck",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
+    "build": "pnpm prisma:generate && pnpm typecheck",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm prisma:validate && pnpm prisma:migrations:check && pnpm test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:format": "prisma format",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:migrations:check": "node scripts/verify-prisma-migrations.mjs",
+    "prisma:status": "prisma migrate status",
+    "prisma:validate": "prisma validate",
     "test": "node --test tests/repository-structure.test.mjs",
     "typecheck": "tsc --project tsconfig.tools.json --noEmit"
   },
   "devDependencies": {
     "@eslint/js": "catalog:",
     "@types/node": "catalog:",
+    "dotenv": "catalog:",
     "eslint": "catalog:",
     "globals": "catalog:",
     "prettier": "catalog:",
+    "prisma": "catalog:",
     "turbo": "catalog:",
     "typescript": "catalog:",
     "typescript-eslint": "catalog:"
+  },
+  "dependencies": {
+    "@prisma/client": "catalog:"
   }
 }

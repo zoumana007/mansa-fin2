@@ -6,5 +6,11 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["eslint.config.mjs", "prettier.config.mjs", "scripts/**/*.mjs", "tests/**/*.mjs"]
+  "include": [
+    "eslint.config.mjs",
+    "prettier.config.mjs",
+    "prisma.config.ts",
+    "scripts/**/*.mjs",
+    "tests/**/*.mjs"
+  ]
 }

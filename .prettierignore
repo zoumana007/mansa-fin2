@@ -1,11 +1,13 @@
 .git
 .turbo
 node_modules
+.pnpm-store
 dist
 build
 coverage
+database/prisma/generated
 
-# The official documentation is immutable during P0-02.
+# The official documentation is immutable unless a dedicated mission authorizes changes.
 docs
 01-cartographie
 03-architecture-technique

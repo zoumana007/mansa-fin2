@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+.pnpm-store/
 
 # Build and task caches
 .turbo/
@@ -24,3 +25,6 @@ pnpm-debug.log*
 
 # Local tooling
 *.tsbuildinfo
+
+# Generated Prisma Client
+database/prisma/generated/
