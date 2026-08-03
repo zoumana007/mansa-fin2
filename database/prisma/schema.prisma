@@ -180,6 +180,37 @@ enum TransferStatus {
   REVERSED
 }
 
+enum NotificationCategory {
+  SECURITY
+  TRANSACTION
+  COMPLIANCE
+  SERVICE
+  REMINDER
+  INFORMATION
+  PROMOTION
+  ADMINISTRATION
+}
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+  CRITICAL
+}
+
+enum NotificationStatus {
+  CREATED
+  READ
+  EXPIRED
+  CANCELLED
+}
+
+enum NotificationSensitivity {
+  PUBLIC
+  PRIVATE
+  SENSITIVE
+}
+
 /// Registre technique des versions applicatives du schéma Mansa.
 /// Il complète l'historique interne de Prisma sans contenir de donnée métier.
 model DatabaseSchemaVersion {
@@ -222,6 +253,8 @@ model User {
   initiatedTransfers   Transfer[]             @relation("TransferInitiator")
   receivedTransfers    Transfer[]             @relation("TransferRecipient")
   transferAuditEntries TransferAudit[]        @relation("TransferAuditActor")
+  notifications        Notification[]         @relation("NotificationRecipient")
+  notificationAudits   NotificationAudit[]    @relation("NotificationAuditActor")
 
   @@index([status])
   @@map("users")
@@ -629,6 +662,55 @@ model TransferAudit {
   @@index([transferId, createdAt])
   @@index([actorUserId, createdAt])
   @@map("transfer_audit")
+}
+
+model Notification {
+  id                String                  @id @default(uuid()) @db.Uuid
+  publicReference   String                  @unique @map("public_reference") @db.VarChar(50)
+  recipientUserId   String                  @map("recipient_user_id") @db.Uuid
+  type              String                  @db.VarChar(150)
+  category          NotificationCategory
+  priority          NotificationPriority    @default(NORMAL)
+  status            NotificationStatus      @default(CREATED)
+  sensitivity       NotificationSensitivity @default(PRIVATE)
+  title             String                  @db.VarChar(150)
+  body              String                  @db.VarChar(500)
+  locale            String                  @db.VarChar(15)
+  countryCode       String                  @map("country_code") @db.Char(2)
+  environment       String                  @db.VarChar(30)
+  idempotencyKey    String                  @map("idempotency_key") @db.VarChar(150)
+  requestHash       String                  @map("request_hash") @db.Char(64)
+  source            String                  @db.VarChar(100)
+  businessReference String?                 @map("business_reference") @db.VarChar(100)
+  correlationId     String?                 @map("correlation_id") @db.VarChar(100)
+  metadata          Json?
+  expiresAt         DateTime?               @map("expires_at") @db.Timestamptz(6)
+  readAt            DateTime?               @map("read_at") @db.Timestamptz(6)
+  createdAt         DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  recipient         User                    @relation("NotificationRecipient", fields: [recipientUserId], references: [id], onDelete: Restrict)
+  auditEntries      NotificationAudit[]
+
+  @@unique([environment, idempotencyKey])
+  @@index([recipientUserId, status, createdAt])
+  @@index([category, priority, createdAt])
+  @@index([correlationId])
+  @@map("notifications")
+}
+
+model NotificationAudit {
+  id             String       @id @default(uuid()) @db.Uuid
+  notificationId String       @map("notification_id") @db.Uuid
+  actorUserId    String?      @map("actor_user_id") @db.Uuid
+  action         String       @db.VarChar(150)
+  details        Json?
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Restrict)
+  actor          User?        @relation("NotificationAuditActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([notificationId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("notification_audit")
 }
 
 model AuthenticationMethod {

@@ -10,6 +10,7 @@ import { IdentityModule } from "./identity/identity.module.js";
 import { LedgerModule } from "./ledger/ledger.module.js";
 import { KycModule } from "./kyc/kyc.module.js";
 import { PaymentModule } from "./payment/payment.module.js";
+import { NotificationModule } from "./notification/notification.module.js";
 import { ProfileModule } from "./profile/profile.module.js";
 import { RbacModule } from "./rbac/rbac.module.js";
 import { AccessTokenGuard } from "./security/access-token.guard.js";
@@ -24,6 +25,7 @@ import { TransferModule } from "./transfer/transfer.module.js";
     IdentityModule,
     KycModule,
     LedgerModule,
+    NotificationModule,
     PaymentModule,
     ProfileModule,
     RbacModule,
