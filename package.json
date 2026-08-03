@@ -11,7 +11,7 @@
     "pnpm": ">=11.0.0 <12"
   },
   "scripts": {
-    "build": "pnpm prisma:generate && pnpm typecheck",
+    "build": "pnpm prisma:generate && turbo run build",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm prisma:validate && pnpm prisma:migrations:check && pnpm test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -23,8 +23,8 @@
     "prisma:migrations:check": "node scripts/verify-prisma-migrations.mjs",
     "prisma:status": "prisma migrate status",
     "prisma:validate": "prisma validate",
-    "test": "node --test tests/repository-structure.test.mjs",
-    "typecheck": "tsc --project tsconfig.tools.json --noEmit"
+    "test": "node --test tests/repository-structure.test.mjs && turbo run test",
+    "typecheck": "tsc --project tsconfig.tools.json --noEmit && turbo run typecheck"
   },
   "devDependencies": {
     "@eslint/js": "catalog:",

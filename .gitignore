@@ -28,3 +28,4 @@ pnpm-debug.log*
 
 # Generated Prisma Client
 database/prisma/generated/
+apps/api-gateway/src/generated/

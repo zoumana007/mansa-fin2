@@ -23,12 +23,13 @@ export default defineConfig(
     languageOptions: {
       globals: globals.node,
       parserOptions: {
-        project: "./tsconfig.tools.json",
+        projectService: true,
         tsconfigRootDir: import.meta.dirname,
       },
     },
     rules: {
       "@typescript-eslint/consistent-type-imports": "error",
+      "@typescript-eslint/no-extraneous-class": ["error", { allowWithDecorator: true }],
       "@typescript-eslint/no-import-type-side-effects": "error",
     },
   },

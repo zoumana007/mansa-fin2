@@ -1,10 +1,35 @@
 generator client {
   provider = "prisma-client"
-  output   = "./generated/client"
+  output   = "../../apps/api-gateway/src/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+enum UserStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+  LOCKED
+  CLOSED
+}
+
+enum AuthenticationMethodType {
+  PASSWORD
+}
+
+enum DeviceTrustLevel {
+  UNTRUSTED
+  TRUSTED
+  SUSPENDED
+  REVOKED
+}
+
+enum SessionStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
 }
 
 /// Registre technique des versions applicatives du schéma Mansa.
@@ -18,4 +43,78 @@ model DatabaseSchemaVersion {
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@map("database_schema_versions")
+}
+
+model User {
+  id                  String                 @id @default(uuid()) @db.Uuid
+  email               String                 @unique @db.VarChar(320)
+  status              UserStatus             @default(PENDING_VERIFICATION)
+  countryCode         String?                @map("country_code") @db.Char(2)
+  emailVerifiedAt     DateTime?              @map("email_verified_at") @db.Timestamptz(6)
+  failedLoginAttempts Int                    @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime?              @map("locked_until") @db.Timestamptz(6)
+  version             Int                    @default(1)
+  createdAt           DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  authentication      AuthenticationMethod[]
+  devices             UserDevice[]
+  sessions            UserSession[]
+
+  @@index([status])
+  @@map("users")
+}
+
+model AuthenticationMethod {
+  id         String                   @id @default(uuid()) @db.Uuid
+  userId     String                   @map("user_id") @db.Uuid
+  type       AuthenticationMethodType
+  secretHash String                   @map("secret_hash") @db.Text
+  lastUsedAt DateTime?                @map("last_used_at") @db.Timestamptz(6)
+  createdAt  DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+  user       User                     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, type])
+  @@index([userId])
+  @@map("authentication_methods")
+}
+
+model UserDevice {
+  id                   String           @id @default(uuid()) @db.Uuid
+  userId               String           @map("user_id") @db.Uuid
+  deviceIdentifierHash String           @map("device_identifier_hash") @db.Char(64)
+  name                 String?          @db.VarChar(100)
+  operatingSystem      String?          @map("operating_system") @db.VarChar(100)
+  applicationVersion   String?          @map("application_version") @db.VarChar(50)
+  trustLevel           DeviceTrustLevel @default(UNTRUSTED) @map("trust_level")
+  approvedAt           DateTime?        @map("approved_at") @db.Timestamptz(6)
+  lastSeenAt           DateTime         @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  createdAt            DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  user                 User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  sessions             UserSession[]
+
+  @@unique([userId, deviceIdentifierHash])
+  @@index([userId, trustLevel])
+  @@map("user_devices")
+}
+
+model UserSession {
+  id               String        @id @default(uuid()) @db.Uuid
+  userId           String        @map("user_id") @db.Uuid
+  deviceId         String        @map("device_id") @db.Uuid
+  refreshTokenHash String        @map("refresh_token_hash") @db.Char(64)
+  status           SessionStatus @default(ACTIVE)
+  ipAddressHash    String?       @map("ip_address_hash") @db.Char(64)
+  countryCode      String?       @map("country_code") @db.Char(2)
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastActivityAt   DateTime      @default(now()) @map("last_activity_at") @db.Timestamptz(6)
+  expiresAt        DateTime      @map("expires_at") @db.Timestamptz(6)
+  revokedAt        DateTime?     @map("revoked_at") @db.Timestamptz(6)
+  user             User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  device           UserDevice    @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+
+  @@index([userId, status])
+  @@index([expiresAt])
+  @@map("user_sessions")
 }

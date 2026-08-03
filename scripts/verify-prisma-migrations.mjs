@@ -8,10 +8,10 @@ const prismaExecutable = new URL(
   process.platform === "win32" ? "node_modules/.bin/prisma.cmd" : "node_modules/.bin/prisma",
   repositoryRoot,
 );
-const migrationFile = new URL(
+const migrationFiles = [
   "database/prisma/migrations/20260803000000_initialize_schema/migration.sql",
-  repositoryRoot,
-);
+  "database/prisma/migrations/20260803010000_add_identity_auth/migration.sql",
+].map((path) => new URL(path, repositoryRoot));
 
 const result = spawnSync(
   fileURLToPath(prismaExecutable),
@@ -25,9 +25,22 @@ const result = spawnSync(
 
 assert.equal(result.status, 0, result.stderr);
 
-const migration = await readFile(migrationFile, "utf8");
-assert.equal(
-  migration.trim(),
-  result.stdout.trim(),
-  "The initial migration must exactly match the current Prisma schema.",
+const migration = (await Promise.all(migrationFiles.map((file) => readFile(file, "utf8")))).join(
+  "\n",
+);
+/** @param {string} sql */
+const statements = (sql) =>
+  sql
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("--"))
+    .join("\n")
+    .split(";")
+    .map((statement) => statement.replaceAll(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .sort();
+
+assert.deepEqual(
+  statements(migration),
+  statements(result.stdout),
+  "The migrations must describe exactly the current Prisma schema.",
 );

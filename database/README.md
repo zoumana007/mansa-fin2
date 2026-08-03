@@ -6,7 +6,7 @@ Ce dossier matérialise l’architecture PostgreSQL et Prisma définie par la do
 
 - `prisma/schema.prisma` : source de vérité du schéma applicatif.
 - `prisma/migrations` : historique SQL immuable des migrations.
-- `prisma/generated` : client généré localement et non suivi dans Git.
+- `apps/api-gateway/src/generated/prisma` : client généré localement et non suivi dans Git.
 - `seeds` : futurs jeux de données fictifs séparés par environnement.
 - `scripts` : futurs contrôles et opérations de données.
 
