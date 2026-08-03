@@ -8,6 +8,7 @@ import { PrismaService } from "./database/prisma.service.js";
 import { HealthController } from "./health/health.controller.js";
 import { IdentityModule } from "./identity/identity.module.js";
 import { LedgerModule } from "./ledger/ledger.module.js";
+import { KycModule } from "./kyc/kyc.module.js";
 import { PaymentModule } from "./payment/payment.module.js";
 import { RbacModule } from "./rbac/rbac.module.js";
 import { AccessTokenGuard } from "./security/access-token.guard.js";
@@ -19,6 +20,7 @@ import { WalletModule } from "./wallet/wallet.module.js";
     ConfigModule.forRoot({ isGlobal: true, cache: true, validate: validateEnvironment }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
     IdentityModule,
+    KycModule,
     LedgerModule,
     PaymentModule,
     RbacModule,

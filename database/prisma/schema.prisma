@@ -147,6 +147,26 @@ enum PaymentStatus {
   REVERSED
 }
 
+enum KycLevel {
+  LEVEL_0
+  LEVEL_1
+  LEVEL_2
+  LEVEL_3
+}
+
+enum KycStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  SUBMITTED
+  AUTOMATIC_REVIEW
+  MANUAL_REVIEW
+  ADDITIONAL_INFORMATION_REQUIRED
+  APPROVED
+  REJECTED
+  EXPIRED
+  SUSPENDED
+}
+
 /// Registre technique des versions applicatives du schéma Mansa.
 /// Il complète l'historique interne de Prisma sans contenir de donnée métier.
 model DatabaseSchemaVersion {
@@ -182,6 +202,8 @@ model User {
   walletAuditEntries  WalletAudit[]          @relation("WalletAuditActor")
   initiatedPayments   Payment[]              @relation("PaymentInitiator")
   paymentAuditEntries PaymentAudit[]         @relation("PaymentAuditActor")
+  kycProfile          KycProfile?
+  kycAuditEntries     KycAudit[]             @relation("KycAuditActor")
 
   @@index([status])
   @@map("users")
@@ -469,6 +491,44 @@ model PaymentAudit {
   @@index([paymentId, createdAt])
   @@index([actorUserId, createdAt])
   @@map("payment_audit")
+}
+
+model KycProfile {
+  id                String     @id @default(uuid()) @db.Uuid
+  userId            String     @unique @map("user_id") @db.Uuid
+  countryCode       String     @map("country_code") @db.Char(2)
+  level             KycLevel   @default(LEVEL_0)
+  requestedLevel    KycLevel   @default(LEVEL_1) @map("requested_level")
+  status            KycStatus  @default(NOT_STARTED)
+  providerReference String?    @map("provider_reference") @db.VarChar(150)
+  submittedAt       DateTime?  @map("submitted_at") @db.Timestamptz(6)
+  reviewedAt        DateTime?  @map("reviewed_at") @db.Timestamptz(6)
+  expiresAt         DateTime?  @map("expires_at") @db.Timestamptz(6)
+  decisionReason    String?    @map("decision_reason") @db.VarChar(500)
+  version           Int        @default(1)
+  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  user              User       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  auditEntries      KycAudit[]
+
+  @@index([status, submittedAt])
+  @@map("kyc_profiles")
+}
+
+model KycAudit {
+  id          String     @id @default(uuid()) @db.Uuid
+  profileId   String     @map("profile_id") @db.Uuid
+  actorUserId String?    @map("actor_user_id") @db.Uuid
+  action      String     @db.VarChar(150)
+  reason      String?    @db.VarChar(500)
+  details     Json?
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  profile     KycProfile @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  actor       User?      @relation("KycAuditActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([profileId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("kyc_audit")
 }
 
 model AuthenticationMethod {

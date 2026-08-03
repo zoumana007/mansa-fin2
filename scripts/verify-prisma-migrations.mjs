@@ -15,6 +15,7 @@ const migrationFiles = [
   "database/prisma/migrations/20260803030000_add_ledger_core/migration.sql",
   "database/prisma/migrations/20260803040000_add_wallet_core/migration.sql",
   "database/prisma/migrations/20260803050000_add_internal_payments/migration.sql",
+  "database/prisma/migrations/20260803060000_add_kyc_core/migration.sql",
 ].map((path) => new URL(path, repositoryRoot));
 
 const result = spawnSync(
@@ -40,7 +41,12 @@ const statements = (sql) =>
     .filter((line) => !line.trimStart().startsWith("--"))
     .join("\n")
     .split(";")
-    .map((statement) => statement.replaceAll(/\s+/g, " ").trim())
+    .map((statement) =>
+      statement
+        .replaceAll(/\s+/g, " ")
+        .replaceAll(/\s*([(),])\s*/g, "$1")
+        .trim(),
+    )
     .filter(Boolean)
     .filter((statement) => !statement.startsWith('INSERT INTO "permissions"'))
     .filter((statement) => !statement.startsWith('INSERT INTO "ledger_journals"'))
