@@ -8,5 +8,6 @@ import { PaymentService } from "./payment.service.js";
   imports: [LedgerModule],
   controllers: [PaymentController],
   providers: [PaymentService, PrismaService],
+  exports: [PaymentService],
 })
 export class PaymentModule {}

@@ -17,6 +17,7 @@ const migrationFiles = [
   "database/prisma/migrations/20260803050000_add_internal_payments/migration.sql",
   "database/prisma/migrations/20260803060000_add_kyc_core/migration.sql",
   "database/prisma/migrations/20260803070000_add_user_profiles/migration.sql",
+  "database/prisma/migrations/20260803080000_add_mansa_transfers/migration.sql",
 ].map((path) => new URL(path, repositoryRoot));
 
 const result = spawnSync(

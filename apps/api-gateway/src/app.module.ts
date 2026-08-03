@@ -15,6 +15,7 @@ import { RbacModule } from "./rbac/rbac.module.js";
 import { AccessTokenGuard } from "./security/access-token.guard.js";
 import { PermissionsGuard } from "./security/permissions.guard.js";
 import { WalletModule } from "./wallet/wallet.module.js";
+import { TransferModule } from "./transfer/transfer.module.js";
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { WalletModule } from "./wallet/wallet.module.js";
     PaymentModule,
     ProfileModule,
     RbacModule,
+    TransferModule,
     WalletModule,
   ],
   controllers: [HealthController],

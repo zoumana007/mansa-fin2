@@ -167,6 +167,19 @@ enum KycStatus {
   SUSPENDED
 }
 
+enum TransferType {
+  MANSA_TO_MANSA
+}
+
+enum TransferStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+  REVERSED
+}
+
 /// Registre technique des versions applicatives du schéma Mansa.
 /// Il complète l'historique interne de Prisma sans contenir de donnée métier.
 model DatabaseSchemaVersion {
@@ -181,31 +194,34 @@ model DatabaseSchemaVersion {
 }
 
 model User {
-  id                  String                 @id @default(uuid()) @db.Uuid
-  email               String                 @unique @db.VarChar(320)
-  status              UserStatus             @default(PENDING_VERIFICATION)
-  countryCode         String?                @map("country_code") @db.Char(2)
-  emailVerifiedAt     DateTime?              @map("email_verified_at") @db.Timestamptz(6)
-  failedLoginAttempts Int                    @default(0) @map("failed_login_attempts")
-  lockedUntil         DateTime?              @map("locked_until") @db.Timestamptz(6)
-  version             Int                    @default(1)
-  createdAt           DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
-  authentication      AuthenticationMethod[]
-  devices             UserDevice[]
-  sessions            UserSession[]
-  roleAssignments     RoleAssignment[]
-  accessAuditEntries  AccessAudit[]          @relation("AccessAuditActor")
-  ledgerTransactions  LedgerTransaction[]    @relation("LedgerTransactionCreator")
-  ledgerAuditEntries  LedgerAudit[]          @relation("LedgerAuditActor")
-  wallets             Wallet[]
-  walletAuditEntries  WalletAudit[]          @relation("WalletAuditActor")
-  initiatedPayments   Payment[]              @relation("PaymentInitiator")
-  paymentAuditEntries PaymentAudit[]         @relation("PaymentAuditActor")
-  kycProfile          KycProfile?
-  kycAuditEntries     KycAudit[]             @relation("KycAuditActor")
-  profile             UserProfile?
-  profileAuditEntries UserProfileAudit[]     @relation("UserProfileAuditActor")
+  id                   String                 @id @default(uuid()) @db.Uuid
+  email                String                 @unique @db.VarChar(320)
+  status               UserStatus             @default(PENDING_VERIFICATION)
+  countryCode          String?                @map("country_code") @db.Char(2)
+  emailVerifiedAt      DateTime?              @map("email_verified_at") @db.Timestamptz(6)
+  failedLoginAttempts  Int                    @default(0) @map("failed_login_attempts")
+  lockedUntil          DateTime?              @map("locked_until") @db.Timestamptz(6)
+  version              Int                    @default(1)
+  createdAt            DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  authentication       AuthenticationMethod[]
+  devices              UserDevice[]
+  sessions             UserSession[]
+  roleAssignments      RoleAssignment[]
+  accessAuditEntries   AccessAudit[]          @relation("AccessAuditActor")
+  ledgerTransactions   LedgerTransaction[]    @relation("LedgerTransactionCreator")
+  ledgerAuditEntries   LedgerAudit[]          @relation("LedgerAuditActor")
+  wallets              Wallet[]
+  walletAuditEntries   WalletAudit[]          @relation("WalletAuditActor")
+  initiatedPayments    Payment[]              @relation("PaymentInitiator")
+  paymentAuditEntries  PaymentAudit[]         @relation("PaymentAuditActor")
+  kycProfile           KycProfile?
+  kycAuditEntries      KycAudit[]             @relation("KycAuditActor")
+  profile              UserProfile?
+  profileAuditEntries  UserProfileAudit[]     @relation("UserProfileAuditActor")
+  initiatedTransfers   Transfer[]             @relation("TransferInitiator")
+  receivedTransfers    Transfer[]             @relation("TransferRecipient")
+  transferAuditEntries TransferAudit[]        @relation("TransferAuditActor")
 
   @@index([status])
   @@map("users")
@@ -422,6 +438,7 @@ model Wallet {
   auditEntries      WalletAudit[]
   outgoingPayments  Payment[]               @relation("PaymentPayerWallet")
   incomingPayments  Payment[]               @relation("PaymentPayeeWallet")
+  sentTransfers     Transfer[]
 
   @@unique([ownerType, ownerId, type, currencyCode, environment])
   @@index([ownerUserId, status])
@@ -472,6 +489,7 @@ model Payment {
   initiatedBy         User               @relation("PaymentInitiator", fields: [initiatedByUserId], references: [id], onDelete: Restrict)
   ledgerTransaction   LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id], onDelete: Restrict)
   auditEntries        PaymentAudit[]
+  transfer            Transfer?
 
   @@unique([environment, idempotencyKey])
   @@index([payerWalletId, createdAt])
@@ -534,32 +552,83 @@ model KycAudit {
 }
 
 model UserProfile {
-  id              String   @id @default(uuid()) @db.Uuid
-  userId          String   @unique @map("user_id") @db.Uuid
-  mansaIdentifier String   @unique @map("mansa_identifier") @db.VarChar(30)
-  username        String   @unique @db.VarChar(30)
-  firstName       String   @map("first_name") @db.VarChar(100)
-  lastName        String   @map("last_name") @db.VarChar(100)
-  version         Int      @default(1)
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  user            User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  id              String             @id @default(uuid()) @db.Uuid
+  userId          String             @unique @map("user_id") @db.Uuid
+  mansaIdentifier String             @unique @map("mansa_identifier") @db.VarChar(30)
+  username        String             @unique @db.VarChar(30)
+  firstName       String             @map("first_name") @db.VarChar(100)
+  lastName        String             @map("last_name") @db.VarChar(100)
+  version         Int                @default(1)
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  user            User               @relation(fields: [userId], references: [id], onDelete: Restrict)
   auditEntries    UserProfileAudit[]
+
   @@map("user_profiles")
 }
 
 model UserProfileAudit {
+  id          String      @id @default(uuid()) @db.Uuid
+  profileId   String      @map("profile_id") @db.Uuid
+  actorUserId String?     @map("actor_user_id") @db.Uuid
+  action      String      @db.VarChar(150)
+  details     Json?
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  profile     UserProfile @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  actor       User?       @relation("UserProfileAuditActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([profileId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("user_profile_audit")
+}
+
+model Transfer {
+  id                String          @id @default(uuid()) @db.Uuid
+  publicReference   String          @unique @map("public_reference") @db.VarChar(50)
+  type              TransferType    @default(MANSA_TO_MANSA)
+  status            TransferStatus  @default(PENDING)
+  paymentId         String?         @unique @map("payment_id") @db.Uuid
+  senderWalletId    String          @map("sender_wallet_id") @db.Uuid
+  recipientUserId   String          @map("recipient_user_id") @db.Uuid
+  recipientHandle   String          @map("recipient_handle") @db.VarChar(30)
+  amount            BigInt          @db.BigInt
+  currencyCode      String          @map("currency_code") @db.Char(3)
+  countryCode       String          @map("country_code") @db.Char(2)
+  environment       String          @db.VarChar(30)
+  idempotencyKey    String          @map("idempotency_key") @db.VarChar(150)
+  requestHash       String          @map("request_hash") @db.Char(64)
+  message           String?         @db.VarChar(280)
+  initiatedByUserId String          @map("initiated_by_user_id") @db.Uuid
+  completedAt       DateTime?       @map("completed_at") @db.Timestamptz(6)
+  failureCode       String?         @map("failure_code") @db.VarChar(100)
+  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  payment           Payment?        @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  senderWallet      Wallet          @relation(fields: [senderWalletId], references: [id], onDelete: Restrict)
+  recipientUser     User            @relation("TransferRecipient", fields: [recipientUserId], references: [id], onDelete: Restrict)
+  initiatedBy       User            @relation("TransferInitiator", fields: [initiatedByUserId], references: [id], onDelete: Restrict)
+  auditEntries      TransferAudit[]
+
+  @@unique([environment, idempotencyKey])
+  @@index([initiatedByUserId, createdAt])
+  @@index([recipientUserId, createdAt])
+  @@index([status, createdAt])
+  @@map("transfers")
+}
+
+model TransferAudit {
   id          String   @id @default(uuid()) @db.Uuid
-  profileId   String   @map("profile_id") @db.Uuid
+  transferId  String   @map("transfer_id") @db.Uuid
   actorUserId String?  @map("actor_user_id") @db.Uuid
   action      String   @db.VarChar(150)
   details     Json?
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  profile     UserProfile @relation(fields: [profileId], references: [id], onDelete: Restrict)
-  actor       User?    @relation("UserProfileAuditActor", fields: [actorUserId], references: [id], onDelete: Restrict)
-  @@index([profileId, createdAt])
+  transfer    Transfer @relation(fields: [transferId], references: [id], onDelete: Restrict)
+  actor       User?    @relation("TransferAuditActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([transferId, createdAt])
   @@index([actorUserId, createdAt])
-  @@map("user_profile_audit")
+  @@map("transfer_audit")
 }
 
 model AuthenticationMethod {
