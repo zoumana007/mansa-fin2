@@ -32,6 +32,20 @@ enum SessionStatus {
   EXPIRED
 }
 
+enum RoleStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum AccessScopeType {
+  GLOBAL
+  SELF
+  ORGANIZATION
+  COUNTRY
+  ENVIRONMENT
+  RESOURCE
+}
+
 /// Registre technique des versions applicatives du schéma Mansa.
 /// Il complète l'historique interne de Prisma sans contenir de donnée métier.
 model DatabaseSchemaVersion {
@@ -59,9 +73,88 @@ model User {
   authentication      AuthenticationMethod[]
   devices             UserDevice[]
   sessions            UserSession[]
+  roleAssignments     RoleAssignment[]
+  accessAuditEntries  AccessAudit[]          @relation("AccessAuditActor")
 
   @@index([status])
   @@map("users")
+}
+
+model Role {
+  id          String           @id @default(uuid()) @db.Uuid
+  code        String           @unique @db.VarChar(100)
+  name        String           @db.VarChar(150)
+  description String?          @db.Text
+  status      RoleStatus       @default(ACTIVE)
+  version     Int              @default(1)
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  permissions RolePermission[]
+  assignments RoleAssignment[]
+
+  @@index([status])
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(uuid()) @db.Uuid
+  code        String           @unique @db.VarChar(150)
+  description String?          @db.Text
+  critical    Boolean          @default(false)
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String     @map("role_id") @db.Uuid
+  permissionId String     @map("permission_id") @db.Uuid
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Restrict)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model RoleAssignment {
+  id          String          @id @default(uuid()) @db.Uuid
+  userId      String          @map("user_id") @db.Uuid
+  roleId      String          @map("role_id") @db.Uuid
+  scopeType   AccessScopeType @default(GLOBAL) @map("scope_type")
+  scopeId     String?         @map("scope_id") @db.VarChar(100)
+  countryCode String?         @map("country_code") @db.Char(2)
+  environment String?         @db.VarChar(30)
+  reason      String          @db.VarChar(500)
+  validFrom   DateTime        @default(now()) @map("valid_from") @db.Timestamptz(6)
+  expiresAt   DateTime?       @map("expires_at") @db.Timestamptz(6)
+  revokedAt   DateTime?       @map("revoked_at") @db.Timestamptz(6)
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  user        User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  role        Role            @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@index([userId, revokedAt, expiresAt])
+  @@index([roleId])
+  @@map("role_assignments")
+}
+
+model AccessAudit {
+  id            String   @id @default(uuid()) @db.Uuid
+  actorUserId   String?  @map("actor_user_id") @db.Uuid
+  action        String   @db.VarChar(150)
+  targetType    String   @map("target_type") @db.VarChar(100)
+  targetId      String?  @map("target_id") @db.VarChar(100)
+  reason        String?  @db.VarChar(500)
+  previousValue Json?    @map("previous_value") @db.JsonB
+  newValue      Json?    @map("new_value") @db.JsonB
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  actor         User?    @relation("AccessAuditActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([actorUserId, createdAt])
+  @@index([targetType, targetId])
+  @@map("access_audit")
 }
 
 model AuthenticationMethod {

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-floating-promises -- node:test registers tests synchronously. */
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -16,7 +17,7 @@ const config = new ConfigService<Environment, true>({
 });
 const tokens = new TokenService(config);
 
-await test("refresh tokens expose no stored secret and are parseable", () => {
+test("refresh tokens expose no stored secret and are parseable", () => {
   const sessionId = "6b1fb7b7-f133-4bb3-bba8-052797577460";
   const refresh = tokens.createRefreshToken(sessionId);
   assert.equal(refresh.hash.length, 64);
@@ -24,7 +25,7 @@ await test("refresh tokens expose no stored secret and are parseable", () => {
   assert.equal(tokens.parseRefreshToken("invalid"), null);
 });
 
-await test("access tokens contain only bounded identity claims", async () => {
+test("access tokens contain only bounded identity claims", async () => {
   const token = await tokens.createAccessToken(
     "c0b84d6f-0df1-43bb-8e04-7369d6d18029",
     "6b1fb7b7-f133-4bb3-bba8-052797577460",

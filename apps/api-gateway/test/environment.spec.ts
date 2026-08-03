@@ -1,9 +1,10 @@
+/* eslint-disable @typescript-eslint/no-floating-promises -- node:test registers tests synchronously. */
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { validateEnvironment } from "../src/config/environment.js";
 
-await test("environment validation rejects short secrets", () => {
+test("environment validation rejects short secrets", () => {
   assert.throws(() =>
     validateEnvironment({
       DATABASE_URL: "postgresql://localhost/mansa",
@@ -12,7 +13,7 @@ await test("environment validation rejects short secrets", () => {
   );
 });
 
-await test("environment validation accepts explicit secure values", () => {
+test("environment validation accepts explicit secure values", () => {
   const environment = validateEnvironment({
     DATABASE_URL: "postgresql://localhost:5432/mansa".padEnd(32, "/"),
     ACCESS_TOKEN_SECRET: "a".repeat(32),

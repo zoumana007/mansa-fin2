@@ -4,8 +4,10 @@ import { Throttle } from "@nestjs/throttler";
 
 import { AuthService } from "./auth.service.js";
 import { LoginDto, LogoutDto, RefreshDto, RegisterDto } from "./dto/auth.dto.js";
+import { Public } from "../security/access.decorators.js";
 
 @ApiTags("identity")
+@Public()
 @Controller("v1/auth")
 export class AuthController {
   constructor(private readonly auth: AuthService) {}

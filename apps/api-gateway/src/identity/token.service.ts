@@ -2,7 +2,7 @@ import { createHmac, randomBytes } from "node:crypto";
 
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { SignJWT } from "jose";
+import { jwtVerify, SignJWT } from "jose";
 
 import type { Environment } from "../config/environment.js";
 
@@ -34,6 +34,18 @@ export class TokenService {
       .setIssuedAt()
       .setExpirationTime("15m");
     return jwt.sign(this.accessSecret);
+  }
+
+  async verifyAccessToken(token: string): Promise<{ userId: string; sessionId: string }> {
+    const { payload } = await jwtVerify(token, this.accessSecret, {
+      algorithms: ["HS256"],
+      issuer: "mansa-identity",
+      audience: "mansa-api",
+    });
+    if (payload.sub === undefined || typeof payload.sid !== "string") {
+      throw new Error("Invalid access token claims");
+    }
+    return { userId: payload.sub, sessionId: payload.sid };
   }
 
   createRefreshToken(sessionId: string): { token: string; hash: string } {
