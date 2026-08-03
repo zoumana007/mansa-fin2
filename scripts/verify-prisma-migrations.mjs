@@ -13,6 +13,7 @@ const migrationFiles = [
   "database/prisma/migrations/20260803010000_add_identity_auth/migration.sql",
   "database/prisma/migrations/20260803020000_add_rbac/migration.sql",
   "database/prisma/migrations/20260803030000_add_ledger_core/migration.sql",
+  "database/prisma/migrations/20260803040000_add_wallet_core/migration.sql",
 ].map((path) => new URL(path, repositoryRoot));
 
 const result = spawnSync(

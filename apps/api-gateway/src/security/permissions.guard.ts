@@ -3,7 +3,11 @@ import type { CanActivate, ExecutionContext } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 
 import { PrismaService } from "../database/prisma.service.js";
-import { IS_PUBLIC_KEY, REQUIRED_PERMISSIONS_KEY } from "./access.decorators.js";
+import {
+  IS_PUBLIC_KEY,
+  PERMISSION_SCOPE_KEY,
+  REQUIRED_PERMISSIONS_KEY,
+} from "./access.decorators.js";
 import { hasEveryPermission } from "./access-policy.js";
 import type { AuthenticatedRequest } from "./authenticated-request.js";
 
@@ -30,14 +34,25 @@ export class PermissionsGuard implements CanActivate {
     if (required.length === 0) throw new ForbiddenException("Permission policy is missing");
 
     const { userId } = context.switchToHttp().getRequest<AuthenticatedRequest>().authentication;
+    const permissionScope = this.reflector.getAllAndOverride<"SELF" | undefined>(
+      PERMISSION_SCOPE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
     const now = new Date();
     const assignments = await this.prisma.roleAssignment.findMany({
       where: {
         userId,
-        scopeType: "GLOBAL",
+        OR:
+          permissionScope === "SELF"
+            ? [
+                { scopeType: "GLOBAL" },
+                { scopeType: "SELF", scopeId: null },
+                { scopeType: "SELF", scopeId: userId },
+              ]
+            : [{ scopeType: "GLOBAL" }],
         revokedAt: null,
         validFrom: { lte: now },
-        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+        AND: [{ OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }],
         role: { status: "ACTIVE" },
       },
       select: {

@@ -11,6 +11,7 @@ import { LedgerModule } from "./ledger/ledger.module.js";
 import { RbacModule } from "./rbac/rbac.module.js";
 import { AccessTokenGuard } from "./security/access-token.guard.js";
 import { PermissionsGuard } from "./security/permissions.guard.js";
+import { WalletModule } from "./wallet/wallet.module.js";
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { PermissionsGuard } from "./security/permissions.guard.js";
     IdentityModule,
     LedgerModule,
     RbacModule,
+    WalletModule,
   ],
   controllers: [HealthController],
   providers: [

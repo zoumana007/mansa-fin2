@@ -100,6 +100,40 @@ enum LedgerEntryStatus {
   FAILED
 }
 
+enum WalletOwnerType {
+  USER
+  AGENT
+  MERCHANT
+  BUSINESS
+  INSTITUTION
+}
+
+enum WalletType {
+  MAIN
+  SECONDARY
+  PROFESSIONAL
+  SAVINGS
+  CHILD
+  STUDENT
+  INVESTMENT
+}
+
+enum WalletStatus {
+  PENDING
+  ACTIVE
+  LIMITED
+  SUSPENDED
+  FROZEN
+  CLOSED
+}
+
+enum WalletVerificationLevel {
+  UNVERIFIED
+  BASIC
+  VERIFIED
+  ENHANCED
+}
+
 /// Registre technique des versions applicatives du schéma Mansa.
 /// Il complète l'historique interne de Prisma sans contenir de donnée métier.
 model DatabaseSchemaVersion {
@@ -131,6 +165,8 @@ model User {
   accessAuditEntries  AccessAudit[]          @relation("AccessAuditActor")
   ledgerTransactions  LedgerTransaction[]    @relation("LedgerTransactionCreator")
   ledgerAuditEntries  LedgerAudit[]          @relation("LedgerAuditActor")
+  wallets             Wallet[]
+  walletAuditEntries  WalletAudit[]          @relation("WalletAuditActor")
 
   @@index([status])
   @@map("users")
@@ -243,6 +279,7 @@ model LedgerAccount {
   createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   closedAt        DateTime?              @map("closed_at") @db.Timestamptz(6)
   entries         LedgerEntry[]
+  wallet          Wallet?
 
   @@index([ownerType, ownerId, status])
   @@index([currencyCode, countryCode, environment, status])
@@ -318,6 +355,53 @@ model LedgerAudit {
   @@index([transactionId, createdAt])
   @@index([actorUserId, createdAt])
   @@map("ledger_audit")
+}
+
+model Wallet {
+  id                String                  @id @default(uuid()) @db.Uuid
+  publicReference   String                  @unique @map("public_reference") @db.VarChar(50)
+  ownerType         WalletOwnerType         @map("owner_type")
+  ownerId           String                  @map("owner_id") @db.VarChar(100)
+  ownerUserId       String?                 @map("owner_user_id") @db.Uuid
+  type              WalletType
+  currencyCode      String                  @map("currency_code") @db.Char(3)
+  countryCode       String                  @map("country_code") @db.Char(2)
+  environment       String                  @db.VarChar(30)
+  status            WalletStatus            @default(PENDING)
+  verificationLevel WalletVerificationLevel @default(UNVERIFIED) @map("verification_level")
+  ledgerAccountId   String                  @unique @map("ledger_account_id") @db.Uuid
+  limits            Json?
+  statusReason      String?                 @map("status_reason") @db.VarChar(500)
+  frozenAt          DateTime?               @map("frozen_at") @db.Timestamptz(6)
+  closedAt          DateTime?               @map("closed_at") @db.Timestamptz(6)
+  version           Int                     @default(1)
+  createdAt         DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  ownerUser         User?                   @relation(fields: [ownerUserId], references: [id], onDelete: Restrict)
+  ledgerAccount     LedgerAccount           @relation(fields: [ledgerAccountId], references: [id], onDelete: Restrict)
+  auditEntries      WalletAudit[]
+
+  @@unique([ownerType, ownerId, type, currencyCode, environment])
+  @@index([ownerUserId, status])
+  @@index([countryCode, currencyCode, environment, status])
+  @@map("wallets")
+}
+
+model WalletAudit {
+  id            String   @id @default(uuid()) @db.Uuid
+  walletId      String   @map("wallet_id") @db.Uuid
+  actorUserId   String?  @map("actor_user_id") @db.Uuid
+  action        String   @db.VarChar(150)
+  reason        String?  @db.VarChar(500)
+  previousValue Json?    @map("previous_value") @db.JsonB
+  newValue      Json?    @map("new_value") @db.JsonB
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  wallet        Wallet   @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  actor         User?    @relation("WalletAuditActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([walletId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("wallet_audit")
 }
 
 model AuthenticationMethod {

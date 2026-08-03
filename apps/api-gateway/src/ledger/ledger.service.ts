@@ -145,11 +145,17 @@ export class LedgerService {
               countryCode: input.countryCode,
               environment: input.environment,
             },
-            select: { id: true },
+            select: { id: true, wallet: { select: { status: true } } },
           });
-          if (accounts.length !== accountIds.length)
+          if (
+            accounts.length !== accountIds.length ||
+            accounts.some(
+              ({ wallet }) =>
+                wallet !== null && wallet.status !== "ACTIVE" && wallet.status !== "LIMITED",
+            )
+          )
             throw new BadRequestException(
-              "Every ledger account must be active and match transaction context",
+              "Every ledger account must be active, usable and match transaction context",
             );
 
           const created = await database.ledgerTransaction.create({
