@@ -1,0 +1,26 @@
+{
+  "name": "@mansa/admin-web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Portail Admin Web Mansa",
+  "license": "UNLICENSED",
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev",
+    "lint": "eslint src test next.config.ts",
+    "start": "next start",
+    "test": "node --import tsx --test test/**/*.spec.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "16.2.11",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "tsx": "catalog:",
+    "typescript": "catalog:"
+  }
+}

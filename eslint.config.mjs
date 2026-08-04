@@ -7,6 +7,7 @@ export default defineConfig(
   {
     ignores: [
       "**/.pnpm-store/**",
+      "**/.next/**",
       "**/.turbo/**",
       "**/build/**",
       "**/coverage/**",

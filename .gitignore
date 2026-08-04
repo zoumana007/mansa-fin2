@@ -5,6 +5,7 @@ node_modules/
 # Build and task caches
 .turbo/
 .expo/
+.next/
 dist/
 build/
 coverage/

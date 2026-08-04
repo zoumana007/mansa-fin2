@@ -10,6 +10,7 @@ allowBuilds:
   argon2: true
   esbuild: true
   prisma: true
+  sharp: true
 
 catalog:
   "@eslint/js": 10.0.1
@@ -49,5 +50,7 @@ catalogMode: strict
 
 overrides:
   "js-yaml@>=5.0.0 <=5.2.1": 5.2.2
+  postcss: 8.5.23
   react-dom: 19.2.3
+  sharp: 0.35.0
   "xcode>uuid": 11.1.1
