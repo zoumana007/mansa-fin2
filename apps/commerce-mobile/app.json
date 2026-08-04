@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "Mansa Commerce",
+    "slug": "mansa-commerce",
+    "version": "0.0.1",
+    "orientation": "default",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "scheme": "mansa-commerce",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mansa.commerce"
+    },
+    "android": {
+      "package": "com.mansa.commerce",
+      "adaptiveIcon": {
+        "backgroundColor": "#071B16"
+      }
+    }
+  }
+}
