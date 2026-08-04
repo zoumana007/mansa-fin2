@@ -16,6 +16,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
+    "pilot:check": "node scripts/verify-pilot-database.mjs && pnpm prisma:deploy && pnpm --filter @mansa/api-gateway test:pilot",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:format": "prisma format",
     "prisma:generate": "prisma generate",

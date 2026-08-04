@@ -15,6 +15,49 @@ permissions:
   contents: read
 
 jobs:
+  pilot:
+    name: P0 technical pilot
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: mansa_pilot
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mansa_pilot"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      ACCESS_TOKEN_SECRET: ci-only-access-token-secret-00000000000000000000
+      DATABASE_URL: postgresql://postgres@localhost:5432/mansa_pilot?schema=public
+      PILOT_ENVIRONMENT: test
+      TOKEN_HASH_SECRET: ci-only-token-hash-secret-000000000000000000000
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+
+      - name: Enable pnpm
+        run: corepack enable && corepack install
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run isolated P0 technical pilot
+        run: pnpm pilot:check
+
   quality:
     name: Quality and security
     runs-on: ubuntu-latest

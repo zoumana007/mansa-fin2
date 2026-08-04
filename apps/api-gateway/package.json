@@ -11,6 +11,7 @@
     "start": "node dist/main.js",
     "start:dev": "nest start --watch",
     "test": "node --import tsx --test test/**/*.spec.ts",
+    "test:pilot": "tsc --project tsconfig.pilot.json && node --test .pilot-dist/test-pilot/*.spec.js",
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },
   "dependencies": {

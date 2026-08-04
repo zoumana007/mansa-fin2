@@ -6,6 +6,7 @@ node_modules/
 .turbo/
 .expo/
 .next/
+.pilot-dist/
 dist/
 build/
 coverage/

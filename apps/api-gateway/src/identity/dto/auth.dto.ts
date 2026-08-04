@@ -1,5 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsEmail, IsOptional, IsString, Length, Matches, MaxLength } from "class-validator";
+import { Type } from "class-transformer";
+import {
+  IsEmail,
+  IsOptional,
+  IsString,
+  Length,
+  Matches,
+  MaxLength,
+  ValidateNested,
+} from "class-validator";
 
 export class DeviceDto {
   @ApiProperty({ minLength: 16, maxLength: 200 })
@@ -41,6 +50,8 @@ export class RegisterDto {
   password!: string;
 
   @ApiProperty({ type: DeviceDto })
+  @ValidateNested()
+  @Type(() => DeviceDto)
   device!: DeviceDto;
 
   @ApiPropertyOptional({ pattern: "^[A-Z]{2}$" })
