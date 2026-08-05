@@ -211,6 +211,26 @@ enum NotificationSensitivity {
   SENSITIVE
 }
 
+enum CashAgentType {
+  STANDARD
+  PREMIUM
+  PARTNER_BRANCH
+  MANSA_BRANCH
+}
+
+enum CashAgentStatus {
+  PENDING_APPROVAL
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum CashAgentFloatStatus {
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
 /// Registre technique des versions applicatives du schéma Mansa.
 /// Il complète l'historique interne de Prisma sans contenir de donnée métier.
 model DatabaseSchemaVersion {
@@ -255,6 +275,8 @@ model User {
   transferAuditEntries TransferAudit[]        @relation("TransferAuditActor")
   notifications        Notification[]         @relation("NotificationRecipient")
   notificationAudits   NotificationAudit[]    @relation("NotificationAuditActor")
+  cashAgent            CashAgent?             @relation("CashAgentOwner")
+  cashAgentAudits      CashNetworkAudit[]     @relation("CashNetworkAuditActor")
 
   @@index([status])
   @@map("users")
@@ -368,10 +390,71 @@ model LedgerAccount {
   closedAt        DateTime?              @map("closed_at") @db.Timestamptz(6)
   entries         LedgerEntry[]
   wallet          Wallet?
+  cashAgentFloat  CashAgentFloatAccount?
 
   @@index([ownerType, ownerId, status])
   @@index([currencyCode, countryCode, environment, status])
   @@map("ledger_accounts")
+}
+
+model CashAgent {
+  id              String                  @id @default(uuid()) @db.Uuid
+  publicReference String                  @unique @map("public_reference") @db.VarChar(50)
+  ownerUserId     String                  @unique @map("owner_user_id") @db.Uuid
+  type            CashAgentType           @default(STANDARD)
+  status          CashAgentStatus         @default(PENDING_APPROVAL)
+  countryCode     String                  @map("country_code") @db.Char(2)
+  environment     String                  @db.VarChar(30)
+  statusReason    String?                 @map("status_reason") @db.VarChar(500)
+  version         Int                     @default(1)
+  activatedAt     DateTime?               @map("activated_at") @db.Timestamptz(6)
+  suspendedAt     DateTime?               @map("suspended_at") @db.Timestamptz(6)
+  closedAt        DateTime?               @map("closed_at") @db.Timestamptz(6)
+  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  owner           User                    @relation("CashAgentOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  floatAccounts   CashAgentFloatAccount[]
+  auditEntries    CashNetworkAudit[]
+
+  @@index([status, countryCode, environment])
+  @@map("cash_agents")
+}
+
+model CashAgentFloatAccount {
+  id                   String               @id @default(uuid()) @db.Uuid
+  cashAgentId          String               @map("cash_agent_id") @db.Uuid
+  ledgerAccountId      String               @unique @map("ledger_account_id") @db.Uuid
+  currencyCode         String               @map("currency_code") @db.Char(3)
+  status               CashAgentFloatStatus @default(ACTIVE)
+  minimumAmount        BigInt               @default(0) @map("minimum_amount") @db.BigInt
+  maximumAmount        BigInt?              @map("maximum_amount") @db.BigInt
+  alertThresholdAmount BigInt               @default(0) @map("alert_threshold_amount") @db.BigInt
+  version              Int                  @default(1)
+  createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  cashAgent            CashAgent            @relation(fields: [cashAgentId], references: [id], onDelete: Restrict)
+  ledgerAccount        LedgerAccount        @relation(fields: [ledgerAccountId], references: [id], onDelete: Restrict)
+
+  @@unique([cashAgentId, currencyCode])
+  @@index([cashAgentId, status])
+  @@map("cash_agent_float_accounts")
+}
+
+model CashNetworkAudit {
+  id            String    @id @default(uuid()) @db.Uuid
+  cashAgentId   String    @map("cash_agent_id") @db.Uuid
+  actorUserId   String?   @map("actor_user_id") @db.Uuid
+  action        String    @db.VarChar(150)
+  reason        String?   @db.VarChar(500)
+  previousValue Json?     @map("previous_value") @db.JsonB
+  newValue      Json?     @map("new_value") @db.JsonB
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  cashAgent     CashAgent @relation(fields: [cashAgentId], references: [id], onDelete: Restrict)
+  actor         User?     @relation("CashNetworkAuditActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([cashAgentId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("cash_network_audit")
 }
 
 model LedgerTransaction {

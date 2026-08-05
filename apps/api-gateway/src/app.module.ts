@@ -3,6 +3,7 @@ import { ConfigModule } from "@nestjs/config";
 import { APP_GUARD } from "@nestjs/core";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 
+import { AgentModule } from "./agent/agent.module.js";
 import { validateEnvironment } from "./config/environment.js";
 import { PrismaService } from "./database/prisma.service.js";
 import { HealthController } from "./health/health.controller.js";
@@ -22,6 +23,7 @@ import { TransferModule } from "./transfer/transfer.module.js";
   imports: [
     ConfigModule.forRoot({ isGlobal: true, cache: true, validate: validateEnvironment }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    AgentModule,
     IdentityModule,
     KycModule,
     LedgerModule,
