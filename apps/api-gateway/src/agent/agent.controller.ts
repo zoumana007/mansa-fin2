@@ -7,6 +7,7 @@ import { AgentService } from "./agent.service.js";
 import {
   CloseCashRegisterDto,
   CreateCashAgentDto,
+  CreateCashDepositDto,
   DeclareCashRegisterDto,
   OpenCashRegisterDto,
   UpdateCashAgentStatusDto,
@@ -83,5 +84,19 @@ export class AgentController {
   @ApiOkResponse()
   closeCashRegister(@Body() input: CloseCashRegisterDto, @Req() request: AuthenticatedRequest) {
     return this.agents.closeCashRegister(input, request.authentication.userId);
+  }
+
+  @Post("agent/deposits")
+  @RequireSelfPermissions(AGENT_PERMISSIONS.depositCreate)
+  @ApiCreatedResponse()
+  createCashDeposit(@Body() input: CreateCashDepositDto, @Req() request: AuthenticatedRequest) {
+    return this.agents.createCashDeposit(input, request.authentication.userId);
+  }
+
+  @Get("agent/transactions")
+  @RequireSelfPermissions(AGENT_PERMISSIONS.transactionRead)
+  @ApiOkResponse()
+  listSelfTransactions(@Req() request: AuthenticatedRequest) {
+    return this.agents.listSelfTransactions(request.authentication.userId);
   }
 }

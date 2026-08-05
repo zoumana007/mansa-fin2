@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import {
   BadRequestException,
@@ -9,9 +9,11 @@ import {
 
 import { PrismaService } from "../database/prisma.service.js";
 import { calculateBalance } from "../ledger/ledger-policy.js";
+import { LedgerService } from "../ledger/ledger.service.js";
 import type { Prisma } from "../generated/prisma/client.js";
 import type {
   CloseCashRegisterDto,
+  CreateCashDepositDto,
   CreateCashAgentDto,
   DeclareCashRegisterDto,
   OpenCashRegisterDto,
@@ -25,7 +27,10 @@ function isUniqueConstraintError(error: unknown): boolean {
 
 @Injectable()
 export class AgentService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ledger: LedgerService,
+  ) {}
 
   async create(input: CreateCashAgentDto, actorUserId: string) {
     try {
@@ -57,12 +62,12 @@ export class AgentService {
               publicReference: `led_acc_${randomUUID().replaceAll("-", "")}`,
               ownerType: "TECHNICAL",
               ownerId: agent.id,
-              type: "ASSET",
+              type: "LIABILITY",
               subtype: "AGENT_FLOAT",
               currencyCode: input.currencyCode,
               countryCode: input.countryCode,
               environment: input.environment,
-              normalBalance: "DEBIT",
+              normalBalance: "CREDIT",
             },
           });
           await transaction.cashAgentFloatAccount.create({
@@ -375,5 +380,192 @@ export class AgentService {
       declaredClosingAmount: register.declaredClosingAmount?.toString() ?? null,
       varianceAmount: register.varianceAmount?.toString() ?? null,
     };
+  }
+
+  async createCashDeposit(input: CreateCashDepositDto, userId: string) {
+    const requestHash = createHash("sha256")
+      .update(
+        JSON.stringify([
+          input.customerWalletId,
+          input.amount,
+          input.currencyCode,
+          input.countryCode,
+          input.environment,
+          input.description,
+        ]),
+      )
+      .digest("hex");
+    const existing = await this.prisma.cashDeposit.findUnique({
+      where: {
+        environment_idempotencyKey: {
+          environment: input.environment,
+          idempotencyKey: input.idempotencyKey,
+        },
+      },
+    });
+    if (existing !== null) {
+      if (existing.requestHash !== requestHash)
+        throw new ConflictException("Idempotency key was already used with another request");
+      return this.serializeDeposit(existing);
+    }
+    try {
+      return await this.prisma.$transaction(
+        async (database) => {
+          const agent = await database.cashAgent.findUnique({ where: { ownerUserId: userId } });
+          if (agent === null) throw new NotFoundException("Cash Agent not found");
+          if (agent.status !== "ACTIVE") throw new BadRequestException("Cash Agent must be active");
+          if (agent.countryCode !== input.countryCode || agent.environment !== input.environment)
+            throw new BadRequestException("Cash Agent context does not match deposit");
+          const [float, register, wallet] = await Promise.all([
+            database.cashAgentFloatAccount.findUnique({
+              where: {
+                cashAgentId_currencyCode: {
+                  cashAgentId: agent.id,
+                  currencyCode: input.currencyCode,
+                },
+              },
+            }),
+            database.cashAgentCashRegister.findFirst({
+              where: { cashAgentId: agent.id, currencyCode: input.currencyCode, status: "OPEN" },
+            }),
+            database.wallet.findUnique({
+              where: { id: input.customerWalletId },
+              include: { ownerUser: { include: { kycProfile: true } } },
+            }),
+          ]);
+          if (float?.status !== "ACTIVE")
+            throw new BadRequestException("Agent float is unavailable");
+          if (register === null) throw new BadRequestException("An open cash register is required");
+          if (
+            wallet?.currencyCode !== input.currencyCode ||
+            wallet.countryCode !== input.countryCode ||
+            wallet.environment !== input.environment
+          )
+            throw new BadRequestException("Customer wallet context does not match deposit");
+          if (
+            wallet.status !== "ACTIVE" ||
+            wallet.ownerUser?.status !== "ACTIVE" ||
+            wallet.ownerUser.kycProfile?.status !== "APPROVED"
+          )
+            throw new BadRequestException("Customer wallet is not eligible for cash deposit");
+          const balances = await database.ledgerEntry.groupBy({
+            by: ["direction"],
+            where: { accountId: float.ledgerAccountId, status: "POSTED" },
+            _sum: { amount: true },
+          });
+          const total = (direction: "CREDIT" | "DEBIT") =>
+            balances.find((item) => item.direction === direction)?._sum.amount ?? 0n;
+          if (total("CREDIT") - total("DEBIT") < BigInt(input.amount))
+            throw new BadRequestException("Insufficient Agent float");
+          const deposit = await database.cashDeposit.create({
+            data: {
+              publicReference: `dep_${randomUUID().replaceAll("-", "")}`,
+              cashAgentId: agent.id,
+              cashRegisterId: register.id,
+              customerWalletId: wallet.id,
+              initiatedByUserId: userId,
+              status: "PROCESSING",
+              amount: BigInt(input.amount),
+              currencyCode: input.currencyCode,
+              countryCode: input.countryCode,
+              environment: input.environment,
+              idempotencyKey: input.idempotencyKey,
+              requestHash,
+              description: input.description,
+            },
+          });
+          const ledgerTransaction = await this.ledger.postTransactionWithClient(
+            database,
+            {
+              journalCode: "GENERAL",
+              type: "AGENT_CASH_DEPOSIT",
+              businessReference: deposit.publicReference,
+              idempotencyKey: `cash-deposit:${input.idempotencyKey}`,
+              currencyCode: input.currencyCode,
+              countryCode: input.countryCode,
+              environment: input.environment,
+              description: input.description,
+              correlationId: deposit.id,
+              source: "cash-agent-service",
+              effectiveAt: new Date().toISOString(),
+              entries: [
+                {
+                  accountId: float.ledgerAccountId,
+                  direction: "DEBIT",
+                  amount: input.amount,
+                  label: input.description,
+                },
+                {
+                  accountId: wallet.ledgerAccountId,
+                  direction: "CREDIT",
+                  amount: input.amount,
+                  label: input.description,
+                },
+              ],
+            },
+            userId,
+          );
+          if (ledgerTransaction === null)
+            throw new ConflictException("Ledger transaction could not be reloaded");
+          await database.cashAgentCashRegister.update({
+            where: { id: register.id },
+            data: {
+              theoreticalAmount: { increment: BigInt(input.amount) },
+              version: { increment: 1 },
+            },
+          });
+          const completed = await database.cashDeposit.update({
+            where: { id: deposit.id },
+            data: {
+              status: "COMPLETED",
+              ledgerTransactionId: ledgerTransaction.id,
+              completedAt: new Date(),
+            },
+          });
+          await database.cashNetworkAudit.create({
+            data: {
+              cashAgentId: agent.id,
+              actorUserId: userId,
+              action: "agent.cash_deposit.complete",
+              newValue: {
+                depositId: completed.id,
+                amount: input.amount,
+                ledgerTransactionId: ledgerTransaction.id,
+              },
+            },
+          });
+          return this.serializeDeposit(completed);
+        },
+        { isolationLevel: "Serializable" },
+      );
+    } catch (error) {
+      if (!isUniqueConstraintError(error)) throw error;
+      const concurrent = await this.prisma.cashDeposit.findUnique({
+        where: {
+          environment_idempotencyKey: {
+            environment: input.environment,
+            idempotencyKey: input.idempotencyKey,
+          },
+        },
+      });
+      if (concurrent === null) throw error;
+      if (concurrent.requestHash !== requestHash)
+        throw new ConflictException("Idempotency key was already used with another request");
+      return this.serializeDeposit(concurrent);
+    }
+  }
+
+  listSelfTransactions(userId: string) {
+    return this.prisma.cashDeposit
+      .findMany({
+        where: { initiatedBy: { id: userId } },
+        orderBy: { createdAt: "desc" },
+        take: 100,
+      })
+      .then((items) => items.map((item) => this.serializeDeposit(item)));
+  }
+
+  private serializeDeposit<T extends { amount: bigint }>(deposit: T) {
+    return { ...deposit, amount: deposit.amount.toString() };
   }
 }

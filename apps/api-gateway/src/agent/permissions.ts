@@ -6,4 +6,6 @@ export const AGENT_PERMISSIONS = {
   cashRegisterOpen: "agent.cash_register.open",
   cashRegisterClose: "agent.cash_register.close",
   cashRegisterDeclare: "agent.cash_register.declare",
+  depositCreate: "agent.deposit.create",
+  transactionRead: "agent.transaction.read",
 } as const;
