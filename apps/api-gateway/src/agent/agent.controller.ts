@@ -12,6 +12,8 @@ import {
   DeclareCashRegisterDto,
   ExecuteCashWithdrawalDto,
   OpenCashRegisterDto,
+  CreateCashFeeRuleDto,
+  QuoteCashFeeDto,
   UpdateCashAgentStatusDto,
 } from "./dto/agent.dto.js";
 import { AGENT_PERMISSIONS } from "./permissions.js";
@@ -120,5 +122,36 @@ export class AgentController {
     @Req() request: AuthenticatedRequest,
   ) {
     return this.agents.executeCashWithdrawal(input, request.authentication.userId);
+  }
+
+  @Post("agent-fee-rules")
+  @RequirePermissions(AGENT_PERMISSIONS.feeRuleManage)
+  @ApiCreatedResponse()
+  createFeeRule(@Body() input: CreateCashFeeRuleDto, @Req() request: AuthenticatedRequest) {
+    return this.agents.createFeeRule(input, request.authentication.userId);
+  }
+
+  @Post("agent-fee-rules/:ruleId/activate")
+  @RequirePermissions(AGENT_PERMISSIONS.feeRuleManage)
+  @ApiOkResponse()
+  activateFeeRule(
+    @Param("ruleId", new ParseUUIDPipe()) ruleId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.agents.activateFeeRule(ruleId, request.authentication.userId);
+  }
+
+  @Get("agent-fee-rules")
+  @RequirePermissions(AGENT_PERMISSIONS.feeRuleRead)
+  @ApiOkResponse()
+  listFeeRules() {
+    return this.agents.listFeeRules();
+  }
+
+  @Post("agent/fee-quotes")
+  @RequireSelfPermissions(AGENT_PERMISSIONS.feeQuote)
+  @ApiCreatedResponse()
+  quoteFee(@Body() input: QuoteCashFeeDto) {
+    return this.agents.quoteFee(input);
   }
 }

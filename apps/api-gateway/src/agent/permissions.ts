@@ -10,4 +10,7 @@ export const AGENT_PERMISSIONS = {
   transactionRead: "agent.transaction.read",
   withdrawalAuthorize: "agent.withdrawal.authorize",
   withdrawalCreate: "agent.withdrawal.create",
+  feeRuleRead: "agent.fee_rule.read",
+  feeRuleManage: "agent.fee_rule.manage",
+  feeQuote: "agent.fee.quote",
 } as const;

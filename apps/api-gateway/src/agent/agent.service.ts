@@ -16,12 +16,15 @@ import type {
   AuthorizeCashWithdrawalDto,
   CreateCashDepositDto,
   CreateCashAgentDto,
+  CreateCashFeeRuleDto,
   DeclareCashRegisterDto,
   ExecuteCashWithdrawalDto,
   OpenCashRegisterDto,
+  QuoteCashFeeDto,
   UpdateCashAgentStatusDto,
 } from "./dto/agent.dto.js";
 import { canTransitionCashAgent } from "./agent-policy.js";
+import { calculateCashFee } from "./cash-fee-policy.js";
 
 function isUniqueConstraintError(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
@@ -33,6 +36,207 @@ export class AgentService {
     private readonly prisma: PrismaService,
     private readonly ledger: LedgerService,
   ) {}
+
+  async createFeeRule(input: CreateCashFeeRuleDto, actorUserId: string) {
+    const effectiveFrom = new Date(input.effectiveFrom);
+    const effectiveTo = input.effectiveTo === undefined ? null : new Date(input.effectiveTo);
+    if (
+      Number.isNaN(effectiveFrom.valueOf()) ||
+      (effectiveTo !== null && Number.isNaN(effectiveTo.valueOf()))
+    )
+      throw new BadRequestException("Fee rule dates are invalid");
+    if (effectiveTo !== null && effectiveTo <= effectiveFrom)
+      throw new BadRequestException("Fee rule end date must be after its start date");
+    const minimum = input.minimumFeeAmount === undefined ? null : BigInt(input.minimumFeeAmount);
+    const maximum = input.maximumFeeAmount === undefined ? null : BigInt(input.maximumFeeAmount);
+    if (minimum !== null && maximum !== null && minimum > maximum)
+      throw new BadRequestException("Minimum fee cannot exceed maximum fee");
+
+    return this.prisma.$transaction(
+      async (database) => {
+        const accounts = await database.ledgerAccount.findMany({
+          where: {
+            id: { in: [input.feeRevenueLedgerAccountId, input.commissionExpenseAccountId] },
+            currencyCode: input.currencyCode,
+            countryCode: input.countryCode,
+            environment: input.environment,
+            status: "ACTIVE",
+          },
+        });
+        const revenue = accounts.find((account) => account.id === input.feeRevenueLedgerAccountId);
+        const expense = accounts.find((account) => account.id === input.commissionExpenseAccountId);
+        if (revenue?.type !== "REVENUE" || revenue.normalBalance !== "CREDIT")
+          throw new BadRequestException(
+            "Fee revenue account must be an active credit REVENUE account",
+          );
+        if (expense?.type !== "EXPENSE" || expense.normalBalance !== "DEBIT")
+          throw new BadRequestException(
+            "Commission account must be an active debit EXPENSE account",
+          );
+        const latest = await database.cashFeeRule.findFirst({
+          where: {
+            operationType: input.operationType,
+            countryCode: input.countryCode,
+            currencyCode: input.currencyCode,
+            environment: input.environment,
+          },
+          orderBy: { ruleVersion: "desc" },
+        });
+        const rule = await database.cashFeeRule.create({
+          data: {
+            publicReference: `fee_${randomUUID().replaceAll("-", "")}`,
+            operationType: input.operationType,
+            countryCode: input.countryCode,
+            currencyCode: input.currencyCode,
+            environment: input.environment,
+            ruleVersion: (latest?.ruleVersion ?? 0) + 1,
+            fixedFeeAmount: BigInt(input.fixedFeeAmount),
+            variableFeeBps: input.variableFeeBps,
+            minimumFeeAmount: minimum,
+            maximumFeeAmount: maximum,
+            agentCommissionBps: input.agentCommissionBps,
+            feeRevenueLedgerAccountId: input.feeRevenueLedgerAccountId,
+            commissionExpenseAccountId: input.commissionExpenseAccountId,
+            effectiveFrom,
+            effectiveTo,
+            reason: input.reason,
+            createdByUserId: actorUserId,
+          },
+        });
+        await database.accessAudit.create({
+          data: {
+            actorUserId,
+            action: "agent.fee_rule.create",
+            targetType: "CashFeeRule",
+            targetId: rule.id,
+            reason: input.reason,
+            newValue: { status: rule.status, ruleVersion: rule.ruleVersion },
+          },
+        });
+        return this.serializeFeeRule(rule);
+      },
+      { isolationLevel: "Serializable" },
+    );
+  }
+
+  async activateFeeRule(ruleId: string, actorUserId: string) {
+    return this.prisma.$transaction(
+      async (database) => {
+        const rule = await database.cashFeeRule.findUnique({ where: { id: ruleId } });
+        if (rule === null) throw new NotFoundException("Cash fee rule not found");
+        if (rule.status !== "DRAFT")
+          throw new ConflictException("Only a draft fee rule can be activated");
+        if (rule.createdByUserId === actorUserId)
+          throw new BadRequestException("Fee rule approval requires a distinct user");
+        const now = new Date();
+        if (rule.effectiveFrom > now || (rule.effectiveTo !== null && rule.effectiveTo <= now))
+          throw new BadRequestException("Fee rule must be effective when it is activated");
+        await database.cashFeeRule.updateMany({
+          where: {
+            operationType: rule.operationType,
+            countryCode: rule.countryCode,
+            currencyCode: rule.currencyCode,
+            environment: rule.environment,
+            status: "ACTIVE",
+          },
+          data: { status: "RETIRED", effectiveTo: now },
+        });
+        const active = await database.cashFeeRule.update({
+          where: { id: rule.id },
+          data: { status: "ACTIVE", approvedByUserId: actorUserId, approvedAt: now },
+        });
+        await database.accessAudit.create({
+          data: {
+            actorUserId,
+            action: "agent.fee_rule.activate",
+            targetType: "CashFeeRule",
+            targetId: rule.id,
+            reason: rule.reason,
+            previousValue: { status: rule.status },
+            newValue: { status: active.status, ruleVersion: active.ruleVersion },
+          },
+        });
+        return this.serializeFeeRule(active);
+      },
+      { isolationLevel: "Serializable" },
+    );
+  }
+
+  listFeeRules() {
+    return this.prisma.cashFeeRule
+      .findMany({ orderBy: [{ createdAt: "desc" }], take: 100 })
+      .then((rules) => rules.map((rule) => this.serializeFeeRule(rule)));
+  }
+
+  async quoteFee(input: QuoteCashFeeDto) {
+    const now = new Date();
+    const rule = await this.prisma.cashFeeRule.findFirst({
+      where: {
+        operationType: input.operationType,
+        countryCode: input.countryCode,
+        currencyCode: input.currencyCode,
+        environment: input.environment,
+        status: "ACTIVE",
+        effectiveFrom: { lte: now },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }],
+      },
+      orderBy: { ruleVersion: "desc" },
+    });
+    if (rule === null) throw new NotFoundException("No active cash fee rule matches this context");
+    const quote = calculateCashFee(BigInt(input.amount), rule);
+    return {
+      ruleId: rule.id,
+      ruleVersion: rule.ruleVersion,
+      operationType: rule.operationType,
+      currencyCode: rule.currencyCode,
+      amount: quote.amount.toString(),
+      feeAmount: quote.feeAmount.toString(),
+      agentCommissionAmount: quote.agentCommissionAmount.toString(),
+      mansaRevenueAmount: quote.mansaRevenueAmount.toString(),
+      totalCustomerDebit: quote.totalCustomerDebit.toString(),
+      effectiveFrom: rule.effectiveFrom,
+      effectiveTo: rule.effectiveTo,
+    };
+  }
+
+  private async resolveActiveFeeRule(
+    database: Prisma.TransactionClient,
+    operationType: "DEPOSIT" | "WITHDRAWAL",
+    countryCode: string,
+    currencyCode: string,
+    environment: string,
+  ) {
+    const now = new Date();
+    const rule = await database.cashFeeRule.findFirst({
+      where: {
+        operationType,
+        countryCode,
+        currencyCode,
+        environment,
+        status: "ACTIVE",
+        effectiveFrom: { lte: now },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }],
+      },
+      orderBy: { ruleVersion: "desc" },
+    });
+    if (rule === null) throw new BadRequestException("An active cash fee rule is required");
+    return rule;
+  }
+
+  private serializeFeeRule<
+    T extends {
+      fixedFeeAmount: bigint;
+      minimumFeeAmount: bigint | null;
+      maximumFeeAmount: bigint | null;
+    },
+  >(rule: T) {
+    return {
+      ...rule,
+      fixedFeeAmount: rule.fixedFeeAmount.toString(),
+      minimumFeeAmount: rule.minimumFeeAmount?.toString() ?? null,
+      maximumFeeAmount: rule.maximumFeeAmount?.toString() ?? null,
+    };
+  }
 
   async create(input: CreateCashAgentDto, actorUserId: string) {
     try {
@@ -450,6 +654,16 @@ export class AgentService {
             wallet.ownerUser.kycProfile?.status !== "APPROVED"
           )
             throw new BadRequestException("Customer wallet is not eligible for cash deposit");
+          const feeRule = await this.resolveActiveFeeRule(
+            database,
+            "DEPOSIT",
+            input.countryCode,
+            input.currencyCode,
+            input.environment,
+          );
+          const fee = calculateCashFee(BigInt(input.amount), feeRule);
+          if (fee.feeAmount >= fee.amount)
+            throw new BadRequestException("Cash deposit fee must be lower than its amount");
           const balances = await database.ledgerEntry.groupBy({
             by: ["direction"],
             where: { accountId: float.ledgerAccountId, status: "POSTED" },
@@ -468,6 +682,10 @@ export class AgentService {
               initiatedByUserId: userId,
               status: "PROCESSING",
               amount: BigInt(input.amount),
+              feeRuleId: feeRule.id,
+              feeRuleVersion: feeRule.ruleVersion,
+              feeAmount: fee.feeAmount,
+              agentCommissionAmount: fee.agentCommissionAmount,
               currencyCode: input.currencyCode,
               countryCode: input.countryCode,
               environment: input.environment,
@@ -500,9 +718,35 @@ export class AgentService {
                 {
                   accountId: wallet.ledgerAccountId,
                   direction: "CREDIT",
-                  amount: input.amount,
+                  amount: (fee.amount - fee.feeAmount).toString(),
                   label: input.description,
                 },
+                ...(fee.feeAmount === 0n
+                  ? []
+                  : [
+                      {
+                        accountId: feeRule.feeRevenueLedgerAccountId,
+                        direction: "CREDIT" as const,
+                        amount: fee.feeAmount.toString(),
+                        label: "Frais dépôt Agent",
+                      },
+                    ]),
+                ...(fee.agentCommissionAmount === 0n
+                  ? []
+                  : [
+                      {
+                        accountId: feeRule.commissionExpenseAccountId,
+                        direction: "DEBIT" as const,
+                        amount: fee.agentCommissionAmount.toString(),
+                        label: "Charge commission Agent",
+                      },
+                      {
+                        accountId: float.ledgerAccountId,
+                        direction: "CREDIT" as const,
+                        amount: fee.agentCommissionAmount.toString(),
+                        label: "Commission Agent",
+                      },
+                    ]),
               ],
             },
             userId,
@@ -532,6 +776,9 @@ export class AgentService {
               newValue: {
                 depositId: completed.id,
                 amount: input.amount,
+                feeAmount: fee.feeAmount.toString(),
+                agentCommissionAmount: fee.agentCommissionAmount.toString(),
+                feeRuleId: feeRule.id,
                 ledgerTransactionId: ledgerTransaction.id,
               },
             },
@@ -575,8 +822,15 @@ export class AgentService {
     }));
   }
 
-  private serializeDeposit<T extends { amount: bigint }>(deposit: T) {
-    return { ...deposit, amount: deposit.amount.toString() };
+  private serializeDeposit<
+    T extends { amount: bigint; feeAmount: bigint; agentCommissionAmount: bigint },
+  >(deposit: T) {
+    return {
+      ...deposit,
+      amount: deposit.amount.toString(),
+      feeAmount: deposit.feeAmount.toString(),
+      agentCommissionAmount: deposit.agentCommissionAmount.toString(),
+    };
   }
 
   async authorizeCashWithdrawal(input: AuthorizeCashWithdrawalDto, userId: string) {
@@ -609,8 +863,16 @@ export class AgentService {
         });
         const total = (direction: "CREDIT" | "DEBIT") =>
           balances.find((item) => item.direction === direction)?._sum.amount ?? 0n;
-        if (total("CREDIT") - total("DEBIT") < BigInt(input.amount))
-          throw new BadRequestException("Insufficient customer balance");
+        const feeRule = await this.resolveActiveFeeRule(
+          database,
+          "WITHDRAWAL",
+          input.countryCode,
+          input.currencyCode,
+          input.environment,
+        );
+        const fee = calculateCashFee(BigInt(input.amount), feeRule);
+        if (total("CREDIT") - total("DEBIT") < fee.totalCustomerDebit)
+          throw new BadRequestException("Insufficient customer balance including fees");
         const token = `wdr_${randomBytes(32).toString("base64url")}`;
         const authorization = await database.cashWithdrawalAuthorization.create({
           data: {
@@ -619,6 +881,10 @@ export class AgentService {
             customerUserId: userId,
             tokenHash: createHash("sha256").update(token).digest("hex"),
             amount: BigInt(input.amount),
+            feeRuleId: feeRule.id,
+            feeRuleVersion: feeRule.ruleVersion,
+            feeAmount: fee.feeAmount,
+            agentCommissionAmount: fee.agentCommissionAmount,
             currencyCode: input.currencyCode,
             countryCode: input.countryCode,
             environment: input.environment,
@@ -633,6 +899,9 @@ export class AgentService {
             newValue: {
               authorizationId: authorization.id,
               amount: input.amount,
+              feeAmount: fee.feeAmount.toString(),
+              agentCommissionAmount: fee.agentCommissionAmount.toString(),
+              feeRuleId: feeRule.id,
               expiresAt: authorization.expiresAt.toISOString(),
             },
           },
@@ -641,6 +910,10 @@ export class AgentService {
           authorizationId: authorization.id,
           authorizationToken: token,
           amount: authorization.amount.toString(),
+          feeAmount: authorization.feeAmount.toString(),
+          totalCustomerDebit: (authorization.amount + authorization.feeAmount).toString(),
+          feeRuleId: authorization.feeRuleId,
+          feeRuleVersion: authorization.feeRuleVersion,
           expiresAt: authorization.expiresAt,
         };
       },
@@ -654,7 +927,7 @@ export class AgentService {
       async (database) => {
         const authorization = await database.cashWithdrawalAuthorization.findUnique({
           where: { tokenHash },
-          include: { withdrawal: true, cashAgent: true, customerWallet: true },
+          include: { withdrawal: true, cashAgent: true, customerWallet: true, feeRule: true },
         });
         if (authorization === null)
           throw new BadRequestException("Invalid withdrawal authorization");
@@ -694,8 +967,10 @@ export class AgentService {
         });
         const total = (direction: "CREDIT" | "DEBIT") =>
           walletBalances.find((item) => item.direction === direction)?._sum.amount ?? 0n;
-        if (total("CREDIT") - total("DEBIT") < authorization.amount)
+        if (total("CREDIT") - total("DEBIT") < authorization.amount + authorization.feeAmount)
           throw new BadRequestException("Insufficient customer balance");
+        if (authorization.feeRule === null || authorization.feeRuleVersion === null)
+          throw new BadRequestException("Withdrawal authorization has no fee snapshot");
         const consumed = await database.cashWithdrawalAuthorization.updateMany({
           where: { id: authorization.id, status: "ACTIVE", expiresAt: { gt: new Date() } },
           data: { status: "CONSUMED", consumedAt: new Date() },
@@ -715,6 +990,10 @@ export class AgentService {
             initiatedByUserId: userId,
             status: "PROCESSING",
             amount: authorization.amount,
+            feeRuleId: authorization.feeRuleId,
+            feeRuleVersion: authorization.feeRuleVersion,
+            feeAmount: authorization.feeAmount,
+            agentCommissionAmount: authorization.agentCommissionAmount,
             currencyCode: authorization.currencyCode,
             countryCode: authorization.countryCode,
             environment: authorization.environment,
@@ -741,7 +1020,7 @@ export class AgentService {
               {
                 accountId: authorization.customerWallet.ledgerAccountId,
                 direction: "DEBIT",
-                amount: authorization.amount.toString(),
+                amount: (authorization.amount + authorization.feeAmount).toString(),
                 label: input.description,
               },
               {
@@ -750,6 +1029,32 @@ export class AgentService {
                 amount: authorization.amount.toString(),
                 label: input.description,
               },
+              ...(authorization.feeAmount === 0n
+                ? []
+                : [
+                    {
+                      accountId: authorization.feeRule.feeRevenueLedgerAccountId,
+                      direction: "CREDIT" as const,
+                      amount: authorization.feeAmount.toString(),
+                      label: "Frais retrait Agent",
+                    },
+                  ]),
+              ...(authorization.agentCommissionAmount === 0n
+                ? []
+                : [
+                    {
+                      accountId: authorization.feeRule.commissionExpenseAccountId,
+                      direction: "DEBIT" as const,
+                      amount: authorization.agentCommissionAmount.toString(),
+                      label: "Charge commission Agent",
+                    },
+                    {
+                      accountId: float.ledgerAccountId,
+                      direction: "CREDIT" as const,
+                      amount: authorization.agentCommissionAmount.toString(),
+                      label: "Commission Agent",
+                    },
+                  ]),
             ],
           },
           userId,
@@ -779,6 +1084,9 @@ export class AgentService {
             newValue: {
               withdrawalId: completed.id,
               amount: authorization.amount.toString(),
+              feeAmount: authorization.feeAmount.toString(),
+              agentCommissionAmount: authorization.agentCommissionAmount.toString(),
+              feeRuleId: authorization.feeRuleId,
               ledgerTransactionId: ledgerTransaction.id,
             },
           },
@@ -789,7 +1097,15 @@ export class AgentService {
     );
   }
 
-  private serializeWithdrawal<T extends { amount: bigint }>(withdrawal: T) {
-    return { ...withdrawal, amount: withdrawal.amount.toString(), cashReleaseAuthorized: true };
+  private serializeWithdrawal<
+    T extends { amount: bigint; feeAmount: bigint; agentCommissionAmount: bigint },
+  >(withdrawal: T) {
+    return {
+      ...withdrawal,
+      amount: withdrawal.amount.toString(),
+      feeAmount: withdrawal.feeAmount.toString(),
+      agentCommissionAmount: withdrawal.agentCommissionAmount.toString(),
+      cashReleaseAuthorized: true,
+    };
   }
 }

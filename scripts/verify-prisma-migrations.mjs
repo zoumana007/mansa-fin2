@@ -24,6 +24,7 @@ const migrationFiles = [
   "database/prisma/migrations/20260805020000_add_cash_deposits/migration.sql",
   "database/prisma/migrations/20260805030000_add_withdrawal_authorizations/migration.sql",
   "database/prisma/migrations/20260805040000_add_cash_withdrawals/migration.sql",
+  "database/prisma/migrations/20260805050000_add_cash_fee_rules/migration.sql",
 ].map((path) => new URL(path, repositoryRoot));
 
 const result = spawnSync(
@@ -41,6 +42,38 @@ assert.equal(result.status, 0, result.stderr);
 const migration = (await Promise.all(migrationFiles.map((file) => readFile(file, "utf8")))).join(
   "\n",
 );
+
+/**
+ * Prisma emits columns inside CREATE TABLE for an empty-schema diff, while an additive production
+ * migration necessarily uses ALTER TABLE. Re-express those generated columns as the exact ALTER
+ * statements from the migration before comparing the two equivalent final schemas.
+ * @param {string} schemaSql
+ * @param {string} migrationSql
+ */
+const normalizeAdditiveColumns = (schemaSql, migrationSql) => {
+  let normalized = schemaSql;
+  const additions = migrationSql.matchAll(
+    /ALTER TABLE "([^"]+)"\s+((?:ADD COLUMN "[^"]+"[^;]*(?:,\s*ADD COLUMN "[^"]+"[^;]*)*);)/g,
+  );
+  for (const addition of additions) {
+    const statement = addition[0];
+    const table = addition[1];
+    const clausesWithTerminator = addition[2];
+    if (table === undefined || clausesWithTerminator === undefined) continue;
+    const clauses = clausesWithTerminator.slice(0, -1);
+    const columnNames = [...clauses.matchAll(/ADD COLUMN "([^"]+)"/g)]
+      .map((match) => match[1])
+      .filter((columnName) => columnName !== undefined);
+    for (const columnName of columnNames) {
+      const createTable = new RegExp(
+        `(CREATE TABLE "${table}" \\([\\s\\S]*?)\\n\\s*"${columnName}"[^\\n]*,`,
+      );
+      normalized = normalized.replace(createTable, "$1");
+    }
+    normalized += `\n${statement}`;
+  }
+  return normalized;
+};
 /** @param {string} sql */
 const statements = (sql) =>
   sql
@@ -62,6 +95,6 @@ const statements = (sql) =>
 
 assert.deepEqual(
   statements(migration),
-  statements(result.stdout),
+  statements(normalizeAdditiveColumns(result.stdout, migration)),
   "The migrations must describe exactly the current Prisma schema.",
 );
