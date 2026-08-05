@@ -156,3 +156,20 @@ export class AuthorizeCashWithdrawalDto {
   @Length(2, 30)
   environment!: string;
 }
+
+export class ExecuteCashWithdrawalDto {
+  @ApiProperty()
+  @IsString()
+  @Length(40, 100)
+  authorizationToken!: string;
+
+  @ApiProperty()
+  @IsString()
+  @Length(8, 150)
+  idempotencyKey!: string;
+
+  @ApiProperty()
+  @IsString()
+  @Length(3, 500)
+  description!: string;
+}

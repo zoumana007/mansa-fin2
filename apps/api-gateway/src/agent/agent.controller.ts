@@ -10,6 +10,7 @@ import {
   CreateCashAgentDto,
   CreateCashDepositDto,
   DeclareCashRegisterDto,
+  ExecuteCashWithdrawalDto,
   OpenCashRegisterDto,
   UpdateCashAgentStatusDto,
 } from "./dto/agent.dto.js";
@@ -109,5 +110,15 @@ export class AgentController {
     @Req() request: AuthenticatedRequest,
   ) {
     return this.agents.authorizeCashWithdrawal(input, request.authentication.userId);
+  }
+
+  @Post("agent/withdrawals")
+  @RequireSelfPermissions(AGENT_PERMISSIONS.withdrawalCreate)
+  @ApiCreatedResponse()
+  executeCashWithdrawal(
+    @Body() input: ExecuteCashWithdrawalDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.agents.executeCashWithdrawal(input, request.authentication.userId);
   }
 }

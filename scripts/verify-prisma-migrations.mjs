@@ -23,6 +23,7 @@ const migrationFiles = [
   "database/prisma/migrations/20260805010000_add_cash_agent_register/migration.sql",
   "database/prisma/migrations/20260805020000_add_cash_deposits/migration.sql",
   "database/prisma/migrations/20260805030000_add_withdrawal_authorizations/migration.sql",
+  "database/prisma/migrations/20260805040000_add_cash_withdrawals/migration.sql",
 ].map((path) => new URL(path, repositoryRoot));
 
 const result = spawnSync(

@@ -309,6 +309,7 @@ model User {
   cashDeclarations         CashAgentCashDeclaration[]    @relation("CashDeclarationActor")
   initiatedCashDeposits    CashDeposit[]                 @relation("CashDepositInitiator")
   withdrawalAuthorizations CashWithdrawalAuthorization[] @relation("WithdrawalAuthorizationCustomer")
+  initiatedCashWithdrawals CashWithdrawal[]              @relation("CashWithdrawalInitiator")
 
   @@index([status])
   @@map("users")
@@ -450,6 +451,7 @@ model CashAgent {
   cashRegisters            CashAgentCashRegister[]
   cashDeposits             CashDeposit[]
   withdrawalAuthorizations CashWithdrawalAuthorization[]
+  cashWithdrawals          CashWithdrawal[]
 
   @@index([status, countryCode, environment])
   @@map("cash_agents")
@@ -515,6 +517,7 @@ model CashAgentCashRegister {
   closedBy              User?                      @relation("CashRegisterClosedBy", fields: [closedByUserId], references: [id], onDelete: Restrict)
   declarations          CashAgentCashDeclaration[]
   deposits              CashDeposit[]
+  withdrawals           CashWithdrawal[]
 
   @@index([cashAgentId, status, openedAt])
   @@map("cash_agent_cash_registers")
@@ -586,10 +589,45 @@ model CashWithdrawalAuthorization {
   cashAgent        CashAgent                     @relation(fields: [cashAgentId], references: [id], onDelete: Restrict)
   customerWallet   Wallet                        @relation(fields: [customerWalletId], references: [id], onDelete: Restrict)
   customer         User                          @relation("WithdrawalAuthorizationCustomer", fields: [customerUserId], references: [id], onDelete: Restrict)
+  withdrawal       CashWithdrawal?
 
   @@index([cashAgentId, status, expiresAt])
   @@index([customerUserId, createdAt])
   @@map("cash_withdrawal_authorizations")
+}
+
+model CashWithdrawal {
+  id                  String                      @id @default(uuid()) @db.Uuid
+  publicReference     String                      @unique @map("public_reference") @db.VarChar(50)
+  authorizationId     String                      @unique @map("authorization_id") @db.Uuid
+  cashAgentId         String                      @map("cash_agent_id") @db.Uuid
+  cashRegisterId      String                      @map("cash_register_id") @db.Uuid
+  customerWalletId    String                      @map("customer_wallet_id") @db.Uuid
+  initiatedByUserId   String                      @map("initiated_by_user_id") @db.Uuid
+  ledgerTransactionId String?                     @unique @map("ledger_transaction_id") @db.Uuid
+  status              CashOperationStatus         @default(CREATED)
+  amount              BigInt                      @db.BigInt
+  currencyCode        String                      @map("currency_code") @db.Char(3)
+  countryCode         String                      @map("country_code") @db.Char(2)
+  environment         String                      @db.VarChar(30)
+  idempotencyKey      String                      @map("idempotency_key") @db.VarChar(150)
+  requestHash         String                      @map("request_hash") @db.Char(64)
+  description         String                      @db.VarChar(500)
+  completedAt         DateTime?                   @map("completed_at") @db.Timestamptz(6)
+  createdAt           DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime                    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  authorization       CashWithdrawalAuthorization @relation(fields: [authorizationId], references: [id], onDelete: Restrict)
+  cashAgent           CashAgent                   @relation(fields: [cashAgentId], references: [id], onDelete: Restrict)
+  cashRegister        CashAgentCashRegister       @relation(fields: [cashRegisterId], references: [id], onDelete: Restrict)
+  customerWallet      Wallet                      @relation(fields: [customerWalletId], references: [id], onDelete: Restrict)
+  initiatedBy         User                        @relation("CashWithdrawalInitiator", fields: [initiatedByUserId], references: [id], onDelete: Restrict)
+  ledgerTransaction   LedgerTransaction?          @relation(fields: [ledgerTransactionId], references: [id], onDelete: Restrict)
+
+  @@unique([environment, idempotencyKey])
+  @@index([cashAgentId, createdAt])
+  @@index([customerWalletId, createdAt])
+  @@index([status, createdAt])
+  @@map("cash_withdrawals")
 }
 
 model LedgerTransaction {
@@ -620,6 +658,7 @@ model LedgerTransaction {
   auditEntries      LedgerAudit[]
   payment           Payment?
   cashDeposit       CashDeposit?
+  cashWithdrawal    CashWithdrawal?
 
   @@unique([environment, idempotencyKey])
   @@index([businessReference])
@@ -690,6 +729,7 @@ model Wallet {
   auditEntries             WalletAudit[]
   cashDeposits             CashDeposit[]
   withdrawalAuthorizations CashWithdrawalAuthorization[]
+  cashWithdrawals          CashWithdrawal[]
   outgoingPayments         Payment[]                     @relation("PaymentPayerWallet")
   incomingPayments         Payment[]                     @relation("PaymentPayeeWallet")
   sentTransfers            Transfer[]

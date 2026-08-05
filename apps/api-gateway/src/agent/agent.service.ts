@@ -17,6 +17,7 @@ import type {
   CreateCashDepositDto,
   CreateCashAgentDto,
   DeclareCashRegisterDto,
+  ExecuteCashWithdrawalDto,
   OpenCashRegisterDto,
   UpdateCashAgentStatusDto,
 } from "./dto/agent.dto.js";
@@ -557,13 +558,21 @@ export class AgentService {
   }
 
   listSelfTransactions(userId: string) {
-    return this.prisma.cashDeposit
-      .findMany({
+    return Promise.all([
+      this.prisma.cashDeposit.findMany({
         where: { initiatedBy: { id: userId } },
         orderBy: { createdAt: "desc" },
         take: 100,
-      })
-      .then((items) => items.map((item) => this.serializeDeposit(item)));
+      }),
+      this.prisma.cashWithdrawal.findMany({
+        where: { initiatedBy: { id: userId } },
+        orderBy: { createdAt: "desc" },
+        take: 100,
+      }),
+    ]).then(([deposits, withdrawals]) => ({
+      deposits: deposits.map((item) => this.serializeDeposit(item)),
+      withdrawals: withdrawals.map((item) => this.serializeWithdrawal(item)),
+    }));
   }
 
   private serializeDeposit<T extends { amount: bigint }>(deposit: T) {
@@ -637,5 +646,150 @@ export class AgentService {
       },
       { isolationLevel: "Serializable" },
     );
+  }
+
+  async executeCashWithdrawal(input: ExecuteCashWithdrawalDto, userId: string) {
+    const tokenHash = createHash("sha256").update(input.authorizationToken).digest("hex");
+    return this.prisma.$transaction(
+      async (database) => {
+        const authorization = await database.cashWithdrawalAuthorization.findUnique({
+          where: { tokenHash },
+          include: { withdrawal: true, cashAgent: true, customerWallet: true },
+        });
+        if (authorization === null)
+          throw new BadRequestException("Invalid withdrawal authorization");
+        if (
+          authorization.cashAgent.ownerUserId !== userId ||
+          authorization.cashAgent.status !== "ACTIVE"
+        )
+          throw new BadRequestException("Withdrawal authorization does not belong to this Agent");
+        if (authorization.withdrawal !== null)
+          return this.serializeWithdrawal(authorization.withdrawal);
+        if (authorization.status !== "ACTIVE" || authorization.expiresAt <= new Date())
+          throw new BadRequestException("Withdrawal authorization is no longer valid");
+        const [float, register] = await Promise.all([
+          database.cashAgentFloatAccount.findUnique({
+            where: {
+              cashAgentId_currencyCode: {
+                cashAgentId: authorization.cashAgentId,
+                currencyCode: authorization.currencyCode,
+              },
+            },
+          }),
+          database.cashAgentCashRegister.findFirst({
+            where: {
+              cashAgentId: authorization.cashAgentId,
+              currencyCode: authorization.currencyCode,
+              status: "OPEN",
+            },
+          }),
+        ]);
+        if (float?.status !== "ACTIVE") throw new BadRequestException("Agent float is unavailable");
+        if (register === null || register.theoreticalAmount < authorization.amount)
+          throw new BadRequestException("Insufficient Agent cash position");
+        const walletBalances = await database.ledgerEntry.groupBy({
+          by: ["direction"],
+          where: { accountId: authorization.customerWallet.ledgerAccountId, status: "POSTED" },
+          _sum: { amount: true },
+        });
+        const total = (direction: "CREDIT" | "DEBIT") =>
+          walletBalances.find((item) => item.direction === direction)?._sum.amount ?? 0n;
+        if (total("CREDIT") - total("DEBIT") < authorization.amount)
+          throw new BadRequestException("Insufficient customer balance");
+        const consumed = await database.cashWithdrawalAuthorization.updateMany({
+          where: { id: authorization.id, status: "ACTIVE", expiresAt: { gt: new Date() } },
+          data: { status: "CONSUMED", consumedAt: new Date() },
+        });
+        if (consumed.count !== 1)
+          throw new ConflictException("Withdrawal authorization was already consumed");
+        const requestHash = createHash("sha256")
+          .update(JSON.stringify([authorization.id, input.description]))
+          .digest("hex");
+        const withdrawal = await database.cashWithdrawal.create({
+          data: {
+            publicReference: `wdr_${randomUUID().replaceAll("-", "")}`,
+            authorizationId: authorization.id,
+            cashAgentId: authorization.cashAgentId,
+            cashRegisterId: register.id,
+            customerWalletId: authorization.customerWalletId,
+            initiatedByUserId: userId,
+            status: "PROCESSING",
+            amount: authorization.amount,
+            currencyCode: authorization.currencyCode,
+            countryCode: authorization.countryCode,
+            environment: authorization.environment,
+            idempotencyKey: input.idempotencyKey,
+            requestHash,
+            description: input.description,
+          },
+        });
+        const ledgerTransaction = await this.ledger.postTransactionWithClient(
+          database,
+          {
+            journalCode: "GENERAL",
+            type: "AGENT_CASH_WITHDRAWAL",
+            businessReference: withdrawal.publicReference,
+            idempotencyKey: `cash-withdrawal:${input.idempotencyKey}`,
+            currencyCode: authorization.currencyCode,
+            countryCode: authorization.countryCode,
+            environment: authorization.environment,
+            description: input.description,
+            correlationId: withdrawal.id,
+            source: "cash-agent-service",
+            effectiveAt: new Date().toISOString(),
+            entries: [
+              {
+                accountId: authorization.customerWallet.ledgerAccountId,
+                direction: "DEBIT",
+                amount: authorization.amount.toString(),
+                label: input.description,
+              },
+              {
+                accountId: float.ledgerAccountId,
+                direction: "CREDIT",
+                amount: authorization.amount.toString(),
+                label: input.description,
+              },
+            ],
+          },
+          userId,
+        );
+        if (ledgerTransaction === null)
+          throw new ConflictException("Ledger transaction could not be reloaded");
+        await database.cashAgentCashRegister.update({
+          where: { id: register.id },
+          data: {
+            theoreticalAmount: { decrement: authorization.amount },
+            version: { increment: 1 },
+          },
+        });
+        const completed = await database.cashWithdrawal.update({
+          where: { id: withdrawal.id },
+          data: {
+            status: "COMPLETED",
+            ledgerTransactionId: ledgerTransaction.id,
+            completedAt: new Date(),
+          },
+        });
+        await database.cashNetworkAudit.create({
+          data: {
+            cashAgentId: authorization.cashAgentId,
+            actorUserId: userId,
+            action: "agent.cash_withdrawal.complete",
+            newValue: {
+              withdrawalId: completed.id,
+              amount: authorization.amount.toString(),
+              ledgerTransactionId: ledgerTransaction.id,
+            },
+          },
+        });
+        return this.serializeWithdrawal(completed);
+      },
+      { isolationLevel: "Serializable" },
+    );
+  }
+
+  private serializeWithdrawal<T extends { amount: bigint }>(withdrawal: T) {
+    return { ...withdrawal, amount: withdrawal.amount.toString(), cashReleaseAuthorized: true };
   }
 }
