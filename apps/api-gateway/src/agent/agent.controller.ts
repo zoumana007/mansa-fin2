@@ -4,7 +4,13 @@ import { ApiCreatedResponse, ApiOkResponse, ApiTags } from "@nestjs/swagger";
 import { RequirePermissions, RequireSelfPermissions } from "../security/access.decorators.js";
 import type { AuthenticatedRequest } from "../security/authenticated-request.js";
 import { AgentService } from "./agent.service.js";
-import { CreateCashAgentDto, UpdateCashAgentStatusDto } from "./dto/agent.dto.js";
+import {
+  CloseCashRegisterDto,
+  CreateCashAgentDto,
+  DeclareCashRegisterDto,
+  OpenCashRegisterDto,
+  UpdateCashAgentStatusDto,
+} from "./dto/agent.dto.js";
 import { AGENT_PERMISSIONS } from "./permissions.js";
 
 @ApiTags("cash-agent")
@@ -56,5 +62,26 @@ export class AgentController {
   @ApiOkResponse()
   listAudit() {
     return this.agents.listAudit();
+  }
+
+  @Post("agent/cash-register/open")
+  @RequireSelfPermissions(AGENT_PERMISSIONS.cashRegisterOpen)
+  @ApiCreatedResponse()
+  openCashRegister(@Body() input: OpenCashRegisterDto, @Req() request: AuthenticatedRequest) {
+    return this.agents.openCashRegister(input, request.authentication.userId);
+  }
+
+  @Post("agent/cash-register/declarations")
+  @RequireSelfPermissions(AGENT_PERMISSIONS.cashRegisterDeclare)
+  @ApiCreatedResponse()
+  declareCash(@Body() input: DeclareCashRegisterDto, @Req() request: AuthenticatedRequest) {
+    return this.agents.declareCash(input, request.authentication.userId);
+  }
+
+  @Post("agent/cash-register/close")
+  @RequireSelfPermissions(AGENT_PERMISSIONS.cashRegisterClose)
+  @ApiOkResponse()
+  closeCashRegister(@Body() input: CloseCashRegisterDto, @Req() request: AuthenticatedRequest) {
+    return this.agents.closeCashRegister(input, request.authentication.userId);
   }
 }

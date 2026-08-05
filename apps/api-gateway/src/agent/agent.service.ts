@@ -9,7 +9,14 @@ import {
 
 import { PrismaService } from "../database/prisma.service.js";
 import { calculateBalance } from "../ledger/ledger-policy.js";
-import type { CreateCashAgentDto, UpdateCashAgentStatusDto } from "./dto/agent.dto.js";
+import type { Prisma } from "../generated/prisma/client.js";
+import type {
+  CloseCashRegisterDto,
+  CreateCashAgentDto,
+  DeclareCashRegisterDto,
+  OpenCashRegisterDto,
+  UpdateCashAgentStatusDto,
+} from "./dto/agent.dto.js";
 import { canTransitionCashAgent } from "./agent-policy.js";
 
 function isUniqueConstraintError(error: unknown): boolean {
@@ -194,5 +201,179 @@ export class AgentService {
 
   listAudit() {
     return this.prisma.cashNetworkAudit.findMany({ orderBy: { createdAt: "desc" }, take: 100 });
+  }
+
+  async openCashRegister(input: OpenCashRegisterDto, userId: string) {
+    try {
+      return await this.prisma.$transaction(
+        async (transaction) => {
+          const agent = await transaction.cashAgent.findUnique({ where: { ownerUserId: userId } });
+          if (agent === null) throw new NotFoundException("Cash Agent not found");
+          if (agent.status !== "ACTIVE") throw new BadRequestException("Cash Agent must be active");
+          const amount = BigInt(input.openingAmount);
+          const register = await transaction.cashAgentCashRegister.create({
+            data: {
+              publicReference: `cash_reg_${randomUUID().replaceAll("-", "")}`,
+              cashAgentId: agent.id,
+              currencyCode: input.currencyCode,
+              openingAmount: amount,
+              theoreticalAmount: amount,
+              ...(input.denominations === undefined
+                ? {}
+                : { openingDenominations: input.denominations as Prisma.InputJsonValue }),
+              openedByUserId: userId,
+              declarations: {
+                create: {
+                  declaredByUserId: userId,
+                  type: "OPENING",
+                  amount,
+                  ...(input.denominations === undefined
+                    ? {}
+                    : { denominations: input.denominations as Prisma.InputJsonValue }),
+                },
+              },
+            },
+          });
+          await transaction.cashNetworkAudit.create({
+            data: {
+              cashAgentId: agent.id,
+              actorUserId: userId,
+              action: "agent.cash_register.open",
+              newValue: {
+                registerId: register.id,
+                currencyCode: input.currencyCode,
+                openingAmount: input.openingAmount,
+              },
+            },
+          });
+          return this.serializeRegister(register);
+        },
+        { isolationLevel: "Serializable" },
+      );
+    } catch (error) {
+      if (isUniqueConstraintError(error))
+        throw new ConflictException("A cash register is already open for this currency");
+      throw error;
+    }
+  }
+
+  async declareCash(input: DeclareCashRegisterDto, userId: string) {
+    return this.prisma.$transaction(
+      async (transaction) => {
+        const register = await transaction.cashAgentCashRegister.findFirst({
+          where: { cashAgent: { ownerUserId: userId }, status: "OPEN" },
+          orderBy: { openedAt: "desc" },
+        });
+        if (register === null) throw new NotFoundException("Open cash register not found");
+        const declaration = await transaction.cashAgentCashDeclaration.create({
+          data: {
+            cashRegisterId: register.id,
+            declaredByUserId: userId,
+            type: "INTERIM",
+            amount: BigInt(input.amount),
+            ...(input.denominations === undefined
+              ? {}
+              : { denominations: input.denominations as Prisma.InputJsonValue }),
+            ...(input.note === undefined ? {} : { note: input.note }),
+          },
+        });
+        await transaction.cashNetworkAudit.create({
+          data: {
+            cashAgentId: register.cashAgentId,
+            actorUserId: userId,
+            action: "agent.cash_register.declare",
+            newValue: {
+              registerId: register.id,
+              declarationId: declaration.id,
+              amount: input.amount,
+            },
+          },
+        });
+        return { ...declaration, amount: declaration.amount.toString() };
+      },
+      { isolationLevel: "Serializable" },
+    );
+  }
+
+  async closeCashRegister(input: CloseCashRegisterDto, userId: string) {
+    return this.prisma.$transaction(
+      async (transaction) => {
+        const register = await transaction.cashAgentCashRegister.findFirst({
+          where: { cashAgent: { ownerUserId: userId }, status: "OPEN" },
+          orderBy: { openedAt: "desc" },
+        });
+        if (register === null) throw new NotFoundException("Open cash register not found");
+        const declaredAmount = BigInt(input.amount);
+        const varianceAmount = declaredAmount - register.theoreticalAmount;
+        const result = await transaction.cashAgentCashRegister.updateMany({
+          where: { id: register.id, status: "OPEN", version: input.expectedVersion },
+          data: {
+            status: "CLOSED",
+            declaredClosingAmount: declaredAmount,
+            varianceAmount,
+            ...(input.denominations === undefined
+              ? {}
+              : { closingDenominations: input.denominations as Prisma.InputJsonValue }),
+            closingReason: input.reason,
+            closedByUserId: userId,
+            closedAt: new Date(),
+            version: { increment: 1 },
+          },
+        });
+        if (result.count !== 1)
+          throw new ConflictException("Cash register was modified concurrently");
+        await transaction.cashAgentCashDeclaration.create({
+          data: {
+            cashRegisterId: register.id,
+            declaredByUserId: userId,
+            type: "CLOSING",
+            amount: declaredAmount,
+            ...(input.denominations === undefined
+              ? {}
+              : { denominations: input.denominations as Prisma.InputJsonValue }),
+            note: input.reason,
+          },
+        });
+        await transaction.cashNetworkAudit.create({
+          data: {
+            cashAgentId: register.cashAgentId,
+            actorUserId: userId,
+            action: "agent.cash_register.close",
+            reason: input.reason,
+            previousValue: {
+              status: register.status,
+              theoreticalAmount: register.theoreticalAmount.toString(),
+            },
+            newValue: {
+              status: "CLOSED",
+              declaredAmount: input.amount,
+              varianceAmount: varianceAmount.toString(),
+            },
+          },
+        });
+        const closed = await transaction.cashAgentCashRegister.findUniqueOrThrow({
+          where: { id: register.id },
+        });
+        return this.serializeRegister(closed);
+      },
+      { isolationLevel: "Serializable" },
+    );
+  }
+
+  private serializeRegister<
+    T extends {
+      openingAmount: bigint;
+      theoreticalAmount: bigint;
+      declaredClosingAmount: bigint | null;
+      varianceAmount: bigint | null;
+    },
+  >(register: T) {
+    return {
+      ...register,
+      openingAmount: register.openingAmount.toString(),
+      theoreticalAmount: register.theoreticalAmount.toString(),
+      declaredClosingAmount: register.declaredClosingAmount?.toString() ?? null,
+      varianceAmount: register.varianceAmount?.toString() ?? null,
+    };
   }
 }
