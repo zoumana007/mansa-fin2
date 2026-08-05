@@ -12,11 +12,11 @@
   },
   "scripts": {
     "build": "pnpm prisma:generate && turbo run build",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm prisma:validate && pnpm prisma:migrations:check && pnpm test",
+    "check": "pnpm prisma:generate && pnpm format:check && pnpm lint && pnpm typecheck && pnpm prisma:validate && pnpm prisma:migrations:check && pnpm test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
-    "pilot:check": "node scripts/verify-pilot-database.mjs && pnpm prisma:deploy && pnpm --filter @mansa/api-gateway test:pilot",
+    "pilot:check": "node scripts/verify-pilot-database.mjs && pnpm prisma:generate && pnpm prisma:deploy && pnpm --filter @mansa/api-gateway test:pilot",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:format": "prisma format",
     "prisma:generate": "prisma generate",
