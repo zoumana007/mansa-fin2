@@ -8,4 +8,6 @@ export const AGENT_PERMISSIONS = {
   cashRegisterDeclare: "agent.cash_register.declare",
   depositCreate: "agent.deposit.create",
   transactionRead: "agent.transaction.read",
+  withdrawalAuthorize: "agent.withdrawal.authorize",
+  withdrawalCreate: "agent.withdrawal.create",
 } as const;

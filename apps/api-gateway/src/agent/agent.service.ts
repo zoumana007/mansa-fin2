@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import {
   BadRequestException,
@@ -13,6 +13,7 @@ import { LedgerService } from "../ledger/ledger.service.js";
 import type { Prisma } from "../generated/prisma/client.js";
 import type {
   CloseCashRegisterDto,
+  AuthorizeCashWithdrawalDto,
   CreateCashDepositDto,
   CreateCashAgentDto,
   DeclareCashRegisterDto,
@@ -567,5 +568,74 @@ export class AgentService {
 
   private serializeDeposit<T extends { amount: bigint }>(deposit: T) {
     return { ...deposit, amount: deposit.amount.toString() };
+  }
+
+  async authorizeCashWithdrawal(input: AuthorizeCashWithdrawalDto, userId: string) {
+    return this.prisma.$transaction(
+      async (database) => {
+        const [agent, wallet] = await Promise.all([
+          database.cashAgent.findUnique({ where: { publicReference: input.agentReference } }),
+          database.wallet.findFirst({
+            where: { id: input.customerWalletId, ownerUserId: userId },
+            include: { ownerUser: { include: { kycProfile: true } } },
+          }),
+        ]);
+        if (agent?.status !== "ACTIVE") throw new BadRequestException("Cash Agent is unavailable");
+        if (agent.countryCode !== input.countryCode || agent.environment !== input.environment)
+          throw new BadRequestException("Cash Agent context does not match withdrawal");
+        if (
+          wallet?.status !== "ACTIVE" ||
+          wallet.currencyCode !== input.currencyCode ||
+          wallet.countryCode !== input.countryCode ||
+          wallet.environment !== input.environment
+        )
+          throw new BadRequestException("Customer wallet is not eligible for withdrawal");
+        const kyc = wallet.ownerUser?.kycProfile;
+        if (kyc?.status !== "APPROVED" || (kyc.expiresAt !== null && kyc.expiresAt <= new Date()))
+          throw new BadRequestException("Customer KYC approval is required");
+        const balances = await database.ledgerEntry.groupBy({
+          by: ["direction"],
+          where: { accountId: wallet.ledgerAccountId, status: "POSTED" },
+          _sum: { amount: true },
+        });
+        const total = (direction: "CREDIT" | "DEBIT") =>
+          balances.find((item) => item.direction === direction)?._sum.amount ?? 0n;
+        if (total("CREDIT") - total("DEBIT") < BigInt(input.amount))
+          throw new BadRequestException("Insufficient customer balance");
+        const token = `wdr_${randomBytes(32).toString("base64url")}`;
+        const authorization = await database.cashWithdrawalAuthorization.create({
+          data: {
+            cashAgentId: agent.id,
+            customerWalletId: wallet.id,
+            customerUserId: userId,
+            tokenHash: createHash("sha256").update(token).digest("hex"),
+            amount: BigInt(input.amount),
+            currencyCode: input.currencyCode,
+            countryCode: input.countryCode,
+            environment: input.environment,
+            expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+          },
+        });
+        await database.cashNetworkAudit.create({
+          data: {
+            cashAgentId: agent.id,
+            actorUserId: userId,
+            action: "agent.cash_withdrawal.authorize",
+            newValue: {
+              authorizationId: authorization.id,
+              amount: input.amount,
+              expiresAt: authorization.expiresAt.toISOString(),
+            },
+          },
+        });
+        return {
+          authorizationId: authorization.id,
+          authorizationToken: token,
+          amount: authorization.amount.toString(),
+          expiresAt: authorization.expiresAt,
+        };
+      },
+      { isolationLevel: "Serializable" },
+    );
   }
 }

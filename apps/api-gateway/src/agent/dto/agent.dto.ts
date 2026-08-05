@@ -128,3 +128,31 @@ export class CreateCashDepositDto {
   @Length(3, 500)
   description!: string;
 }
+
+export class AuthorizeCashWithdrawalDto {
+  @ApiProperty()
+  @IsUUID()
+  customerWalletId!: string;
+
+  @ApiProperty()
+  @IsString()
+  @Length(5, 50)
+  agentReference!: string;
+
+  @ApiProperty({ description: "Montant entier dans l’unité minimale" })
+  @Matches(/^[1-9]\d*$/)
+  amount!: string;
+
+  @ApiProperty({ pattern: "^[A-Z]{3}$" })
+  @Matches(/^[A-Z]{3}$/)
+  currencyCode!: string;
+
+  @ApiProperty({ pattern: "^[A-Z]{2}$" })
+  @Matches(/^[A-Z]{2}$/)
+  countryCode!: string;
+
+  @ApiProperty()
+  @IsString()
+  @Length(2, 30)
+  environment!: string;
+}

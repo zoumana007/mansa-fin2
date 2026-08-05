@@ -251,6 +251,13 @@ enum CashOperationStatus {
   REVERSED
 }
 
+enum WithdrawalAuthorizationStatus {
+  ACTIVE
+  CONSUMED
+  EXPIRED
+  CANCELLED
+}
+
 /// Registre technique des versions applicatives du schéma Mansa.
 /// Il complète l'historique interne de Prisma sans contenir de donnée métier.
 model DatabaseSchemaVersion {
@@ -265,42 +272,43 @@ model DatabaseSchemaVersion {
 }
 
 model User {
-  id                    String                     @id @default(uuid()) @db.Uuid
-  email                 String                     @unique @db.VarChar(320)
-  status                UserStatus                 @default(PENDING_VERIFICATION)
-  countryCode           String?                    @map("country_code") @db.Char(2)
-  emailVerifiedAt       DateTime?                  @map("email_verified_at") @db.Timestamptz(6)
-  failedLoginAttempts   Int                        @default(0) @map("failed_login_attempts")
-  lockedUntil           DateTime?                  @map("locked_until") @db.Timestamptz(6)
-  version               Int                        @default(1)
-  createdAt             DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt             DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(6)
-  authentication        AuthenticationMethod[]
-  devices               UserDevice[]
-  sessions              UserSession[]
-  roleAssignments       RoleAssignment[]
-  accessAuditEntries    AccessAudit[]              @relation("AccessAuditActor")
-  ledgerTransactions    LedgerTransaction[]        @relation("LedgerTransactionCreator")
-  ledgerAuditEntries    LedgerAudit[]              @relation("LedgerAuditActor")
-  wallets               Wallet[]
-  walletAuditEntries    WalletAudit[]              @relation("WalletAuditActor")
-  initiatedPayments     Payment[]                  @relation("PaymentInitiator")
-  paymentAuditEntries   PaymentAudit[]             @relation("PaymentAuditActor")
-  kycProfile            KycProfile?
-  kycAuditEntries       KycAudit[]                 @relation("KycAuditActor")
-  profile               UserProfile?
-  profileAuditEntries   UserProfileAudit[]         @relation("UserProfileAuditActor")
-  initiatedTransfers    Transfer[]                 @relation("TransferInitiator")
-  receivedTransfers     Transfer[]                 @relation("TransferRecipient")
-  transferAuditEntries  TransferAudit[]            @relation("TransferAuditActor")
-  notifications         Notification[]             @relation("NotificationRecipient")
-  notificationAudits    NotificationAudit[]        @relation("NotificationAuditActor")
-  cashAgent             CashAgent?                 @relation("CashAgentOwner")
-  cashAgentAudits       CashNetworkAudit[]         @relation("CashNetworkAuditActor")
-  openedCashRegisters   CashAgentCashRegister[]    @relation("CashRegisterOpenedBy")
-  closedCashRegisters   CashAgentCashRegister[]    @relation("CashRegisterClosedBy")
-  cashDeclarations      CashAgentCashDeclaration[] @relation("CashDeclarationActor")
-  initiatedCashDeposits CashDeposit[]              @relation("CashDepositInitiator")
+  id                       String                        @id @default(uuid()) @db.Uuid
+  email                    String                        @unique @db.VarChar(320)
+  status                   UserStatus                    @default(PENDING_VERIFICATION)
+  countryCode              String?                       @map("country_code") @db.Char(2)
+  emailVerifiedAt          DateTime?                     @map("email_verified_at") @db.Timestamptz(6)
+  failedLoginAttempts      Int                           @default(0) @map("failed_login_attempts")
+  lockedUntil              DateTime?                     @map("locked_until") @db.Timestamptz(6)
+  version                  Int                           @default(1)
+  createdAt                DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime                      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  authentication           AuthenticationMethod[]
+  devices                  UserDevice[]
+  sessions                 UserSession[]
+  roleAssignments          RoleAssignment[]
+  accessAuditEntries       AccessAudit[]                 @relation("AccessAuditActor")
+  ledgerTransactions       LedgerTransaction[]           @relation("LedgerTransactionCreator")
+  ledgerAuditEntries       LedgerAudit[]                 @relation("LedgerAuditActor")
+  wallets                  Wallet[]
+  walletAuditEntries       WalletAudit[]                 @relation("WalletAuditActor")
+  initiatedPayments        Payment[]                     @relation("PaymentInitiator")
+  paymentAuditEntries      PaymentAudit[]                @relation("PaymentAuditActor")
+  kycProfile               KycProfile?
+  kycAuditEntries          KycAudit[]                    @relation("KycAuditActor")
+  profile                  UserProfile?
+  profileAuditEntries      UserProfileAudit[]            @relation("UserProfileAuditActor")
+  initiatedTransfers       Transfer[]                    @relation("TransferInitiator")
+  receivedTransfers        Transfer[]                    @relation("TransferRecipient")
+  transferAuditEntries     TransferAudit[]               @relation("TransferAuditActor")
+  notifications            Notification[]                @relation("NotificationRecipient")
+  notificationAudits       NotificationAudit[]           @relation("NotificationAuditActor")
+  cashAgent                CashAgent?                    @relation("CashAgentOwner")
+  cashAgentAudits          CashNetworkAudit[]            @relation("CashNetworkAuditActor")
+  openedCashRegisters      CashAgentCashRegister[]       @relation("CashRegisterOpenedBy")
+  closedCashRegisters      CashAgentCashRegister[]       @relation("CashRegisterClosedBy")
+  cashDeclarations         CashAgentCashDeclaration[]    @relation("CashDeclarationActor")
+  initiatedCashDeposits    CashDeposit[]                 @relation("CashDepositInitiator")
+  withdrawalAuthorizations CashWithdrawalAuthorization[] @relation("WithdrawalAuthorizationCustomer")
 
   @@index([status])
   @@map("users")
@@ -422,25 +430,26 @@ model LedgerAccount {
 }
 
 model CashAgent {
-  id              String                  @id @default(uuid()) @db.Uuid
-  publicReference String                  @unique @map("public_reference") @db.VarChar(50)
-  ownerUserId     String                  @unique @map("owner_user_id") @db.Uuid
-  type            CashAgentType           @default(STANDARD)
-  status          CashAgentStatus         @default(PENDING_APPROVAL)
-  countryCode     String                  @map("country_code") @db.Char(2)
-  environment     String                  @db.VarChar(30)
-  statusReason    String?                 @map("status_reason") @db.VarChar(500)
-  version         Int                     @default(1)
-  activatedAt     DateTime?               @map("activated_at") @db.Timestamptz(6)
-  suspendedAt     DateTime?               @map("suspended_at") @db.Timestamptz(6)
-  closedAt        DateTime?               @map("closed_at") @db.Timestamptz(6)
-  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
-  owner           User                    @relation("CashAgentOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
-  floatAccounts   CashAgentFloatAccount[]
-  auditEntries    CashNetworkAudit[]
-  cashRegisters   CashAgentCashRegister[]
-  cashDeposits    CashDeposit[]
+  id                       String                        @id @default(uuid()) @db.Uuid
+  publicReference          String                        @unique @map("public_reference") @db.VarChar(50)
+  ownerUserId              String                        @unique @map("owner_user_id") @db.Uuid
+  type                     CashAgentType                 @default(STANDARD)
+  status                   CashAgentStatus               @default(PENDING_APPROVAL)
+  countryCode              String                        @map("country_code") @db.Char(2)
+  environment              String                        @db.VarChar(30)
+  statusReason             String?                       @map("status_reason") @db.VarChar(500)
+  version                  Int                           @default(1)
+  activatedAt              DateTime?                     @map("activated_at") @db.Timestamptz(6)
+  suspendedAt              DateTime?                     @map("suspended_at") @db.Timestamptz(6)
+  closedAt                 DateTime?                     @map("closed_at") @db.Timestamptz(6)
+  createdAt                DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime                      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  owner                    User                          @relation("CashAgentOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  floatAccounts            CashAgentFloatAccount[]
+  auditEntries             CashNetworkAudit[]
+  cashRegisters            CashAgentCashRegister[]
+  cashDeposits             CashDeposit[]
+  withdrawalAuthorizations CashWithdrawalAuthorization[]
 
   @@index([status, countryCode, environment])
   @@map("cash_agents")
@@ -560,6 +569,29 @@ model CashDeposit {
   @@map("cash_deposits")
 }
 
+model CashWithdrawalAuthorization {
+  id               String                        @id @default(uuid()) @db.Uuid
+  cashAgentId      String                        @map("cash_agent_id") @db.Uuid
+  customerWalletId String                        @map("customer_wallet_id") @db.Uuid
+  customerUserId   String                        @map("customer_user_id") @db.Uuid
+  tokenHash        String                        @unique @map("token_hash") @db.Char(64)
+  status           WithdrawalAuthorizationStatus @default(ACTIVE)
+  amount           BigInt                        @db.BigInt
+  currencyCode     String                        @map("currency_code") @db.Char(3)
+  countryCode      String                        @map("country_code") @db.Char(2)
+  environment      String                        @db.VarChar(30)
+  expiresAt        DateTime                      @map("expires_at") @db.Timestamptz(6)
+  consumedAt       DateTime?                     @map("consumed_at") @db.Timestamptz(6)
+  createdAt        DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  cashAgent        CashAgent                     @relation(fields: [cashAgentId], references: [id], onDelete: Restrict)
+  customerWallet   Wallet                        @relation(fields: [customerWalletId], references: [id], onDelete: Restrict)
+  customer         User                          @relation("WithdrawalAuthorizationCustomer", fields: [customerUserId], references: [id], onDelete: Restrict)
+
+  @@index([cashAgentId, status, expiresAt])
+  @@index([customerUserId, createdAt])
+  @@map("cash_withdrawal_authorizations")
+}
+
 model LedgerTransaction {
   id                String                  @id @default(uuid()) @db.Uuid
   journalId         String                  @map("journal_id") @db.Uuid
@@ -634,32 +666,33 @@ model LedgerAudit {
 }
 
 model Wallet {
-  id                String                  @id @default(uuid()) @db.Uuid
-  publicReference   String                  @unique @map("public_reference") @db.VarChar(50)
-  ownerType         WalletOwnerType         @map("owner_type")
-  ownerId           String                  @map("owner_id") @db.VarChar(100)
-  ownerUserId       String?                 @map("owner_user_id") @db.Uuid
-  type              WalletType
-  currencyCode      String                  @map("currency_code") @db.Char(3)
-  countryCode       String                  @map("country_code") @db.Char(2)
-  environment       String                  @db.VarChar(30)
-  status            WalletStatus            @default(PENDING)
-  verificationLevel WalletVerificationLevel @default(UNVERIFIED) @map("verification_level")
-  ledgerAccountId   String                  @unique @map("ledger_account_id") @db.Uuid
-  limits            Json?
-  statusReason      String?                 @map("status_reason") @db.VarChar(500)
-  frozenAt          DateTime?               @map("frozen_at") @db.Timestamptz(6)
-  closedAt          DateTime?               @map("closed_at") @db.Timestamptz(6)
-  version           Int                     @default(1)
-  createdAt         DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
-  ownerUser         User?                   @relation(fields: [ownerUserId], references: [id], onDelete: Restrict)
-  ledgerAccount     LedgerAccount           @relation(fields: [ledgerAccountId], references: [id], onDelete: Restrict)
-  auditEntries      WalletAudit[]
-  cashDeposits      CashDeposit[]
-  outgoingPayments  Payment[]               @relation("PaymentPayerWallet")
-  incomingPayments  Payment[]               @relation("PaymentPayeeWallet")
-  sentTransfers     Transfer[]
+  id                       String                        @id @default(uuid()) @db.Uuid
+  publicReference          String                        @unique @map("public_reference") @db.VarChar(50)
+  ownerType                WalletOwnerType               @map("owner_type")
+  ownerId                  String                        @map("owner_id") @db.VarChar(100)
+  ownerUserId              String?                       @map("owner_user_id") @db.Uuid
+  type                     WalletType
+  currencyCode             String                        @map("currency_code") @db.Char(3)
+  countryCode              String                        @map("country_code") @db.Char(2)
+  environment              String                        @db.VarChar(30)
+  status                   WalletStatus                  @default(PENDING)
+  verificationLevel        WalletVerificationLevel       @default(UNVERIFIED) @map("verification_level")
+  ledgerAccountId          String                        @unique @map("ledger_account_id") @db.Uuid
+  limits                   Json?
+  statusReason             String?                       @map("status_reason") @db.VarChar(500)
+  frozenAt                 DateTime?                     @map("frozen_at") @db.Timestamptz(6)
+  closedAt                 DateTime?                     @map("closed_at") @db.Timestamptz(6)
+  version                  Int                           @default(1)
+  createdAt                DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime                      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  ownerUser                User?                         @relation(fields: [ownerUserId], references: [id], onDelete: Restrict)
+  ledgerAccount            LedgerAccount                 @relation(fields: [ledgerAccountId], references: [id], onDelete: Restrict)
+  auditEntries             WalletAudit[]
+  cashDeposits             CashDeposit[]
+  withdrawalAuthorizations CashWithdrawalAuthorization[]
+  outgoingPayments         Payment[]                     @relation("PaymentPayerWallet")
+  incomingPayments         Payment[]                     @relation("PaymentPayeeWallet")
+  sentTransfers            Transfer[]
 
   @@unique([ownerType, ownerId, type, currencyCode, environment])
   @@index([ownerUserId, status])

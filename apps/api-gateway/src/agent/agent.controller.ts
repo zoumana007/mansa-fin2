@@ -6,6 +6,7 @@ import type { AuthenticatedRequest } from "../security/authenticated-request.js"
 import { AgentService } from "./agent.service.js";
 import {
   CloseCashRegisterDto,
+  AuthorizeCashWithdrawalDto,
   CreateCashAgentDto,
   CreateCashDepositDto,
   DeclareCashRegisterDto,
@@ -98,5 +99,15 @@ export class AgentController {
   @ApiOkResponse()
   listSelfTransactions(@Req() request: AuthenticatedRequest) {
     return this.agents.listSelfTransactions(request.authentication.userId);
+  }
+
+  @Post("agent/withdrawal-authorizations")
+  @RequireSelfPermissions(AGENT_PERMISSIONS.withdrawalAuthorize)
+  @ApiCreatedResponse()
+  authorizeCashWithdrawal(
+    @Body() input: AuthorizeCashWithdrawalDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.agents.authorizeCashWithdrawal(input, request.authentication.userId);
   }
 }
