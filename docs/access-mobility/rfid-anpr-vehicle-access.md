@@ -312,3 +312,105 @@ Access & Mobility
 ```
 
 Toutes les règles métier doivent être configurables depuis le portail avec permissions, date d’effet, versioning et journal d’audit.
+
+## 19. Suspension, maintenance et panne
+
+Un service, un site, une voie ou un équipement peut adopter les états suivants :
+
+```text
+ACTIVE
+SUSPENDED
+MAINTENANCE
+DEGRADED
+CLOSED
+DISABLED
+```
+
+La suspension ne supprime ni les abonnements, ni les véhicules, ni les tags RFID, ni les droits historiques. Une réactivation restaure le service selon les règles en vigueur.
+
+En cas de panne partielle, Mansa doit identifier précisément le composant indisponible : caméra ANPR, lecteur RFID, terminal carte, Mobile Money, réseau, contrôleur, barrière, imprimante ou autre périphérique. Les autres moyens disponibles doivent continuer à fonctionner lorsque cela est sûr.
+
+## 20. Affichage obligatoire sur la borne
+
+L’écran de la borne ou du terminal de voie doit informer immédiatement l’usager de l’état du service.
+
+Exemples :
+
+- `Service temporairement indisponible — utilisez la voie 2.`
+- `Télépéage indisponible — veuillez utiliser le paiement à la borne.`
+- `Paiement par carte indisponible — autres moyens disponibles.`
+- `Connexion momentanément indisponible — traitement en mode dégradé.`
+- `Voie fermée pour maintenance.`
+
+Le message affiché doit être configurable par l’organisation, localisable par langue et cohérent avec l’état réel du matériel. Une panne ne doit jamais être présentée comme un paiement refusé par le client.
+
+## 21. Bascule et continuité de service
+
+Selon la nature de l’incident, le moteur peut :
+
+- rediriger vers une autre voie ;
+- désactiver uniquement le moyen de paiement en panne ;
+- basculer du RFID vers la borne de paiement ;
+- basculer de la vérification `RFID_AND_PLATE_REQUIRED` vers une politique dégradée préautorisée ;
+- activer un mode local hors ligne ;
+- fermer complètement la voie si la sécurité n’est plus garantie.
+
+Toute bascule automatique ou manuelle est journalisée.
+
+## 22. Suspension d’un abonnement et résiliation
+
+Les abonnements liés à Access & Mobility doivent supporter :
+
+```text
+ACTIVE
+SUSPENDED
+EXPIRED
+CANCELLED
+TERMINATED
+```
+
+Une résiliation ou suspension ne supprime jamais l’historique de paiement, de passage ou d’affectation RFID.
+
+La politique financière est configurable par produit et par organisation. Les modes minimaux sont :
+
+```text
+NON_REFUNDABLE
+PRORATA_REFUND
+CREDIT
+EXTEND_VALIDITY
+MANUAL_DECISION
+```
+
+Pour un service public, l’autorité peut configurer un abonnement comme non remboursable après résiliation lorsque son cadre juridique et ses conditions de vente le permettent. Cette règle ne doit pas être codée en dur pour tous les services et tous les clients.
+
+## 23. Suspension du service et traitement de la durée d’abonnement
+
+Lorsqu’un service est suspendu indépendamment de l’usager, l’organisation doit pouvoir choisir une politique explicite :
+
+```text
+SUBSCRIPTION_CLOCK_CONTINUES
+PAUSE_AND_EXTEND
+COMPENSATE_WITH_CREDIT
+MANUAL_COMPENSATION
+NO_COMPENSATION
+```
+
+La politique appliquée doit être versionnée, datée et auditable. Une modification ne doit pas rétroagir silencieusement sur des abonnements déjà conclus.
+
+## 24. Audit des incidents
+
+Chaque incident opérationnel doit pouvoir enregistrer :
+
+- site et voie ;
+- équipement concerné ;
+- heure de début ;
+- heure de fin ;
+- cause connue ou supposée ;
+- état du service ;
+- message présenté aux usagers ;
+- mode de secours activé ;
+- opérateur ou système à l’origine du changement ;
+- nombre de passages et transactions affectés ;
+- décision éventuelle de compensation.
+
+Ces données alimentent le reporting de disponibilité, les SLA et les contrôles de conformité.
